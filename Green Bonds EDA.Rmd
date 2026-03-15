@@ -1,0 +1,224 @@
+---
+title: "Green Bonds EDA"
+author: "Noah Leibowitz"
+date: "2026-03-09"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+# Load in all libraries
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(ggplot2)
+library(maps)
+
+```
+
+```{r}
+
+# Solar data sets
+solar_2024 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Solar.xlsx", sheet = "2024")
+solar_2023 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Solar.xlsx", sheet = "2023")
+solar_2022 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Solar.xlsx", sheet = "2022")
+solar_2021 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Solar.xlsx", sheet = "2021")
+solar_2020 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Solar.xlsx", sheet = "2020")
+solar_2019 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Solar.xlsx", sheet = "2019")
+solar_2018 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Solar.xlsx", sheet = "2018")
+solar_2017 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Solar.xlsx", sheet = "2017")
+solar_2016 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Solar.xlsx", sheet = "2016")
+solar_2015 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Solar.xlsx", sheet = "2015")
+solar_2014 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Solar.xlsx", sheet = "2014")
+solar_2013 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Solar.xlsx", sheet = "2013")
+
+# Wind data sets
+wind_2024 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Wind.xlsx", sheet = "2024")
+wind_2023 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Wind.xlsx", sheet = "2023")
+wind_2022 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Wind.xlsx", sheet = "2022")
+wind_2021 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Wind.xlsx", sheet = "2021")
+wind_2020 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Wind.xlsx", sheet = "2020")
+wind_2019 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Wind.xlsx", sheet = "2019")
+wind_2018 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Wind.xlsx", sheet = "2018")
+wind_2017 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Wind.xlsx", sheet = "2017")
+wind_2016 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Wind.xlsx", sheet = "2016")
+wind_2015 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Wind.xlsx", sheet = "2015")
+wind_2014 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Wind.xlsx", sheet = "2014")
+wind_2013 = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Wind.xlsx", sheet = "2013")
+
+# Green Bond Issuance data set
+GBI = read_excel("/Users/njlei/OneDrive/Desktop/Green Bonds Data/Green Bond Issuance.xlsx")
+
+
+```
+
+```{r}
+
+# Vector of years
+years <- 2024:2013
+
+# Initialize empty list to store per-year state totals
+solar_totals <- list()
+
+for (yr in years) {
+  # Get the dataframe for that year using get()
+  df <- get(paste0("solar_", yr))
+  
+  # Sum capacity per state
+  solar_totals[[as.character(yr)]] <- df %>%
+    group_by(State) %>%
+    summarise(TotalCapacity = sum(`Nameplate Capacity (MW)`, na.rm = TRUE))
+}
+
+solar_all_years <- bind_rows(
+  lapply(names(solar_totals), function(yr) {
+    solar_totals[[yr]] %>% mutate(Year = as.numeric(yr))
+  })
+)
+
+# Initialize empty list to store per-year state totals for wind
+wind_totals <- list()
+
+for (yr in years) {
+  # Get the dataframe for that year dynamically
+  df <- get(paste0("wind_", yr))
+  
+  # Sum capacity per state
+  wind_totals[[as.character(yr)]] <- df %>%
+    group_by(State) %>%
+    summarise(TotalCapacity = sum(`Nameplate Capacity (MW)`, na.rm = TRUE))
+}
+
+wind_all_years <- bind_rows(
+  lapply(names(wind_totals), function(yr) {
+    wind_totals[[yr]] %>% mutate(Year = as.numeric(yr))
+  })
+)
+
+```
+
+```{r}
+
+solar_mean <- bind_rows(
+  lapply(names(solar_totals), function(yr) {
+    solar_totals[[yr]] %>% mutate(Year = as.numeric(yr))
+  })
+) %>%
+  group_by(State) %>%
+  summarise(MeanSolar = mean(TotalCapacity, na.rm = TRUE))
+
+wind_mean <- bind_rows(
+  lapply(names(wind_totals), function(yr) {
+    wind_totals[[yr]] %>% mutate(Year = as.numeric(yr))
+  })
+) %>%
+  group_by(State) %>%
+  summarise(MeanWind = mean(TotalCapacity, na.rm = TRUE))
+
+# Merge solar and wind means
+renewables_mean <- full_join(solar_mean, wind_mean, by = "State") %>%
+  mutate(MeanRenewable = MeanSolar + MeanWind)
+
+us_states <- map_data("state")
+
+# Make sure state names match: lowercase
+renewables_mean$region <- tolower(state.abb[match(renewables_mean$State, state.abb)])
+
+# Convert state abbreviations to lowercase full names
+renewables_mean$region <- tolower(state.name[match(renewables_mean$State, state.abb)])
+
+us_map_data <- left_join(us_states, renewables_mean, by = "region")
+
+ggplot(us_map_data, aes(x = long, y = lat, group = group, fill = MeanRenewable)) +
+  geom_polygon(color = "white") +
+  scale_fill_viridis_c(option = "C", na.value = "grey90") +
+  labs(
+    title = "Mean Renewable Energy Capacity by State (MW)",
+    fill = "MW"
+  ) +
+  theme_void() +
+  theme(legend.position = "right")
+
+```
+
+```{r}
+
+# Map data
+us_states <- map_data("state")
+
+# Merge map with solar and wind means separately
+solar_map_data <- left_join(us_states, renewables_mean %>% select(region, MeanSolar), by = "region")
+wind_map_data  <- left_join(us_states, renewables_mean %>% select(region, MeanWind), by = "region")
+
+```
+
+```{r}
+
+ggplot(solar_map_data, aes(x = long, y = lat, group = group, fill = MeanSolar)) +
+  geom_polygon(color = "white") +
+  scale_fill_viridis_c(option = "C", na.value = "grey90") +
+  labs(
+    title = "Mean Solar Capacity by State (MW)",
+    fill = "MW"
+  ) +
+  theme_void() +
+  theme(legend.position = "right")
+
+```
+
+```{r}
+
+ggplot(wind_map_data, aes(x = long, y = lat, group = group, fill = MeanWind)) +
+  geom_polygon(color = "white") +
+  scale_fill_viridis_c(option = "C", na.value = "grey90") +
+  labs(
+    title = "Mean Wind Capacity by State (MW)",
+    fill = "MW"
+  ) +
+  theme_void() +
+  theme(legend.position = "right")
+
+```
+
+```{r}
+
+# Sum total capacity per state across all years
+solar_total_state <- solar_all_years %>%
+  group_by(State) %>%
+  summarise(TotalCapacity = sum(TotalCapacity, na.rm = TRUE))
+
+wind_total_state <- wind_all_years %>%
+  group_by(State) %>%
+  summarise(TotalCapacity = sum(TotalCapacity, na.rm = TRUE))
+
+```
+
+```{r}
+
+ggplot(solar_total_state, aes(x = log(TotalCapacity))) +
+  geom_histogram(binwidth = 1, fill = "lightsalmon2", color = "black") +
+  labs(
+    title = "Distribution of Log(Total Solar Capacity by State)",
+    x = "Total Solar Capacity (MW)",
+    y = "Number of States"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+
+ggplot(wind_total_state, aes(x = log(TotalCapacity))) +
+  geom_histogram(binwidth = 1, fill = "darkblue", color = "black") +
+  labs(
+    title = "Distribution of Log(Total Wind Capacity by State)",
+    x = "Total Solar Capacity (MW)",
+    y = "Number of States"
+  ) +
+  theme_minimal()
+
+```

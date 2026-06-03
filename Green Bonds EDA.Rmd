@@ -249,3 +249,8 @@ ggplot(wind_total_state, aes(x = log(TotalCapacity))) +
   theme_minimal()
 
 ```
+
+```{r}
+print("Hello World")
+```
+

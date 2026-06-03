@@ -1,6 +1,6 @@
 ---
 title: "Green Bonds EDA"
-author: "Noah Leibowitz"
+author: "Noah Leibowitz & Siya Motwani"
 date: "2026-03-09"
 output: pdf_document
 ---

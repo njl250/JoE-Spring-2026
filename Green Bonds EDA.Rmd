@@ -61,6 +61,7 @@ GBI = read_excel("Green Bond Issuance.xlsx")
 
 # Vector of years
 years <- 2024:2013
+print("hello")
 
 # Initialize empty list to store per-year state totals
 solar_totals <- list()

@@ -180,6 +180,8 @@ solar = ggplot(solar_map_data, aes(x = long, y = lat, group = group, fill = Mean
     panel.background = element_rect(fill = "white", color = NA)
   )
 
+print(solar)
+
 ggsave("solar.png", plot = solar, width = 6, height = 4, dpi = 300)
 
 ```
@@ -206,6 +208,8 @@ wind = ggplot(wind_map_data, aes(x = long, y = lat, group = group, fill = MeanWi
     plot.background = element_rect(fill = "white", color = NA),
     panel.background = element_rect(fill = "white", color = NA)
   )
+
+print(wind)
 
 ggsave("wind.png", plot = wind, width = 6, height = 4, dpi = 300)
 
@@ -248,9 +252,5 @@ ggplot(wind_total_state, aes(x = log(TotalCapacity))) +
   ) +
   theme_minimal()
 
-```
-
-```{r}
-print("Hello World")
 ```
 

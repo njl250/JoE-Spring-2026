@@ -51,8 +51,8 @@ wind_2015 = read_excel("Wind.xlsx", sheet = "2015")
 wind_2014 = read_excel("Wind.xlsx", sheet = "2014")
 wind_2013 = read_excel("Wind.xlsx", sheet = "2013")
 
-# Green Bond Issuance data set
-GBI = read_excel("Green Bond Issuance.xlsx")
+# Green Bond Issuance and RPS data set
+GBI = read_excel("GB_RPS Hard Code.xlsx")
 
 
 ```

@@ -1,7 +1,7 @@
 ---
 title: "Green Bonds EDA"
 author: "Noah Leibowitz & Siya Motwani"
-date: "2026-03-09"
+date: "`r Sys.Date()`"
 output: pdf_document
 ---
 
@@ -18,7 +18,6 @@ library(readxl)
 library(ggplot2)
 library(maps)
 library(tidyr)
-library(janitor)
 
 ```
 
@@ -94,6 +93,8 @@ filter(year >= 2010 & year <= 2012)
 ```
 
 ```{r}
+
+# Cleaning Pre-Solar Data
 
 # 2. Extract columns by their exact position number instead of text names
 solar_wide_cumulative <- pre_solar %>%

@@ -18,44 +18,104 @@ library(readxl)
 library(ggplot2)
 library(maps)
 library(tidyr)
+library(janitor)
 
 ```
 
 ```{r}
 
-# Solar data sets
-solar_2024 = read_excel("Solar.xlsx", sheet = "2024")
-solar_2023 = read_excel("Solar.xlsx", sheet = "2023")
-solar_2022 = read_excel("Solar.xlsx", sheet = "2022")
-solar_2021 = read_excel("Solar.xlsx", sheet = "2021")
-solar_2020 = read_excel("Solar.xlsx", sheet = "2020")
-solar_2019 = read_excel("Solar.xlsx", sheet = "2019")
-solar_2018 = read_excel("Solar.xlsx", sheet = "2018")
-solar_2017 = read_excel("Solar.xlsx", sheet = "2017")
-solar_2016 = read_excel("Solar.xlsx", sheet = "2016")
-solar_2015 = read_excel("Solar.xlsx", sheet = "2015")
-solar_2014 = read_excel("Solar.xlsx", sheet = "2014")
-solar_2013 = read_excel("Solar.xlsx", sheet = "2013")
+# Solar Data
+solar_2024 <- read_excel("Solar.xlsx", sheet = "2024")
+solar_2023 <- read_excel("Solar.xlsx", sheet = "2023")
+solar_2022 <- read_excel("Solar.xlsx", sheet = "2022")
+solar_2021 <- read_excel("Solar.xlsx", sheet = "2021")
+solar_2020 <- read_excel("Solar.xlsx", sheet = "2020")
+solar_2019 <- read_excel("Solar.xlsx", sheet = "2019")
+solar_2018 <- read_excel("Solar.xlsx", sheet = "2018")
+solar_2017 <- read_excel("Solar.xlsx", sheet = "2017")
+solar_2016 <- read_excel("Solar.xlsx", sheet = "2016")
+solar_2015 <- read_excel("Solar.xlsx", sheet = "2015")
+solar_2014 <- read_excel("Solar.xlsx", sheet = "2014")
+solar_2013 <- read_excel("Solar.xlsx", sheet = "2013")
 
-# Wind data sets
-wind_2024 = read_excel("Wind.xlsx", sheet = "2024")
-wind_2023 = read_excel("Wind.xlsx", sheet = "2023")
-wind_2022 = read_excel("Wind.xlsx", sheet = "2022")
-wind_2021 = read_excel("Wind.xlsx", sheet = "2021")
-wind_2020 = read_excel("Wind.xlsx", sheet = "2020")
-wind_2019 = read_excel("Wind.xlsx", sheet = "2019")
-wind_2018 = read_excel("Wind.xlsx", sheet = "2018")
-wind_2017 = read_excel("Wind.xlsx", sheet = "2017")
-wind_2016 = read_excel("Wind.xlsx", sheet = "2016")
-wind_2015 = read_excel("Wind.xlsx", sheet = "2015")
-wind_2014 = read_excel("Wind.xlsx", sheet = "2014")
-wind_2013 = read_excel("Wind.xlsx", sheet = "2013")
+# Wind Data
+wind_2024 <- read_excel("Wind.xlsx", sheet = "2024")
+wind_2023 <- read_excel("Wind.xlsx", sheet = "2023")
+wind_2022 <- read_excel("Wind.xlsx", sheet = "2022")
+wind_2021 <- read_excel("Wind.xlsx", sheet = "2021")
+wind_2020 <- read_excel("Wind.xlsx", sheet = "2020")
+wind_2019 <- read_excel("Wind.xlsx", sheet = "2019")
+wind_2018 <- read_excel("Wind.xlsx", sheet = "2018")
+wind_2017 <- read_excel("Wind.xlsx", sheet = "2017")
+wind_2016 <- read_excel("Wind.xlsx", sheet = "2016")
+wind_2015 <- read_excel("Wind.xlsx", sheet = "2015")
+wind_2014 <- read_excel("Wind.xlsx", sheet = "2014")
+wind_2013 <- read_excel("Wind.xlsx", sheet = "2013")
 
-# Green Bond Issuance and RPS data set
-GBI = read_excel("GB_RPS Hard Code.xlsx")
+# Green Bond Issuance and RPS Data
+GBI <- read_excel("GB_RPS Hard Code.xlsx")
 
+# Pre-Trends Wind Data
+pre_wind <- read_csv("Wind Pre.csv")
+
+# Pre-Trends Solar Data
+pre_solar <- read_excel("Solar 2010 - 2012.xlsx")
 
 ```
+
+```{r}
+
+# Cleaning Pre-Wind Data
+
+clean_wind_panel <- pre_wind %>%
+# Remove any rows where the operational year is missing/blank
+filter(!is.na(p_year)) %>%
+
+# Select only the specific columns your model needs
+select(t_state, p_year, t_cap) %>%
+  
+# Group by State and Year, and convert individual turbine kW to total MW added
+group_by(t_state, p_year) %>%
+summarize(mw_added = sum(t_cap, na.rm = TRUE) / 1000, .groups = 'drop') %>%
+
+# Open your 50-state grid for your pre-trends window
+complete(t_state, p_year = 2000:2026, fill = list(mw_added = 0)) %>%
+arrange(t_state, p_year) %>%
+group_by(t_state) %>%
+
+# Cumulative sum holds capacity at 0 until first project, 
+# then holds total capacity flat forward through the years
+mutate(total_wind_mw = cumsum(mw_added)) %>%
+rename(state = t_state, year = p_year) %>%
+
+# Filter the outcome variable to strictly include 2010-2012
+filter(year >= 2010 & year <= 2012)
+
+```
+
+```{r}
+
+# 2. Extract columns by their exact position number instead of text names
+solar_wide_cumulative <- pre_solar %>%
+  # Select column 2 (State), column 3 (2010), column 4 (2011), and column 5 (2012)
+  select(State = 1, 2, 3, 4)
+
+# 3. Check what R actually named these columns so we can use them
+col_names <- colnames(solar_wide_cumulative)
+
+# 4. Perform the math using index tracking to prevent text crashes
+solar_wide_cumulative <- solar_wide_cumulative %>%
+  mutate(
+    Year_2010 = .[[2]],                  # Pulls the data from the 2010 column position
+    Year_2011 = .[[2]] + .[[3]],         # Adds 2010 + 2011 column positions
+    Year_2012 = (.[[2]] + .[[3]]) + .[[4]] # Adds 2010 + 2011 + 2012 column positions
+  ) %>%
+  
+  # 5. Output only your State and the clean, quote-free cumulative totals
+  select(State, Year_2010, Year_2011, Year_2012)
+
+```
+
 
 ```{r}
 

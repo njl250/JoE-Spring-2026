@@ -94,7 +94,7 @@ mutate(total_wind_mw = cumsum(mw_added)) %>%
 rename(state = t_state, year = p_year) %>%
 
 # Filter the outcome variable to strictly include 2010-2012
-filter(year >= 2010 & year <= 2012)
+filter(year >= 2010 & year <= 2013)
 
 # Split by each year and pivot year column to display state and capacity by each year separately
 clean_wind_panel <- clean_wind_panel %>%
@@ -105,6 +105,8 @@ wind_2010 <- clean_wind_panel[[1]]
 wind_2011 <- clean_wind_panel[[2]]
 wind_2012 <- clean_wind_panel[[3]]
 
+wind_2013_test <- clean_wind_panel[[4]]
+
 ```
 
 
@@ -112,113 +114,37 @@ wind_2012 <- clean_wind_panel[[3]]
 
 # Cleaning Pre-Solar Data
 
-# 2. Extract columns by their exact position number instead of text names
+# 2. Extract columns and IMMEDIATELY name them so they can't shift
 solar_wide_cumulative <- pre_solar %>%
-  # Select column 2 (State), column 3 (2010), column 4 (2011), and column 5 (2012)
-  select(State = 1, 2, 3, 4)
-
-# 3. Check what R actually named these columns so we can use them
-col_names <- colnames(solar_wide_cumulative)
-
-# 4. Perform the math using index tracking to prevent text crashes
-solar_wide_cumulative <- solar_wide_cumulative %>%
-  mutate(
-    Year_2010 = .[[2]],                  # Pulls the data from the 2010 column position
-    Year_2011 = .[[2]] + .[[3]],         # Adds 2010 + 2011 column positions
-    Year_2012 = (.[[2]] + .[[3]]) + .[[4]] # Adds 2010 + 2011 + 2012 column positions
-  ) %>%
-  
-  # 5. Output only your State and the clean, quote-free cumulative totals
-  select(State, Year_2010, Year_2011, Year_2012)
-
-```
-
-
-```{r}
-
-# Clean Post-Solar Data
-
-# Add year columns
-solar_2010 <- solar_wide_cumulative %>%
-  select(State, solar_capacity = Year_2010) %>%
-  mutate(
-    year = 2010,
-    State = state.abb[match(State, state.name)]
-    ) %>%
-  arrange(State)
-
-solar_2011 <- solar_wide_cumulative %>%
-  select(State, solar_capacity = Year_2011) %>%
-  mutate(
-    year = 2011,
-    State = state.abb[match(State, state.name)]) %>%
-  arrange(State)
-
-solar_2012 <- solar_wide_cumulative %>%
-  select(State, solar_capacity = Year_2012) %>%
-  mutate(
-    year = 2012,
-    State = state.abb[match(State, state.name)]) %>%
-  arrange(State)
-
-# Loop through every year from 2013 to 2024
-for (y in 2013:2024) {
-  
-  # 1. Dynamically get the variable name (e.g., "solar_2013")
-  var_name <- paste0("solar_", y)
-  
-  # 2. Grab the dataframe from your environment
-  temp_df <- get(var_name)
-  
-  # 3. Apply the tidyverse pipeline to sum up capacities by state
-  cleaned_df <- temp_df %>%
-    mutate(year = y) %>%  # Dynamically add the current loop's year
-    rename(solar_capacity = `Nameplate Capacity (MW)`) %>% 
-    group_by(State, year) %>% 
-    summarize(solar_capacity = sum(solar_capacity, na.rm = TRUE), .groups = "drop") %>%
-    arrange(State)
-  
-  # 4. Overwrite the messy dataframe in your environment with the cleaned one
-  assign(var_name, cleaned_df)
-}
-
-post_solar_all = bind_rows(solar_2010, solar_2011, solar_2012, solar_2013, solar_2014, solar_2015, solar_2016, solar_2017, solar_2018, solar_2019, solar_2020, solar_2021, solar_2022, solar_2023, solar_2024)
-
-# 1. Create a master dataframe containing exactly the 48 contiguous states
-contiguous_48 <- state.abb[!state.abb %in% c("AK", "HI")]
-master_states <- data.frame(State = contiguous_48)
-
-# 2. Group and aggregate FIRST to handle hidden duplicates, then pivot wide
-solar_wide <- post_solar_all %>%
-  group_by(State, year) %>%
-  summarize(solar_capacity = sum(solar_capacity, na.rm = TRUE), .groups = "drop") %>%
-  pivot_wider(
-    names_from = year, 
-    values_from = solar_capacity,
-    names_prefix = "yr_"
+  select(
+    State = 1, 
+    raw_2010 = 2, 
+    raw_2011 = 3, 
+    raw_2012 = 4, 
+    raw_2013 = 5
   )
 
-# 3. Left join the master list with your solar data and sort alphabetically
-final_solar_panel <- master_states %>%
-  left_join(solar_wide, by = "State") %>%
-  arrange(State)
+# 3. Check column names (Optional, safe to keep)
+col_names <- colnames(solar_wide_cumulative)
 
-# 4. Interpolate missing values cleanly
-final_solar_panel_clean <- final_solar_panel %>%
-  pivot_longer(
-    cols = starts_with("yr_"), 
-    names_to = "year", 
-    values_to = "solar_capacity"
+# 4. Perform the math using explicit names (No indices to break!)
+solar_wide_cumulative <- solar_wide_cumulative %>%
+  mutate(
+    # 2010 is just the base year
+    Year_2010 = replace_na(raw_2010, 0),
+    
+    # 2011 = 2010 + 2011
+    Year_2011 = replace_na(raw_2010, 0) + replace_na(raw_2011, 0),
+    
+    # 2012 = 2010 + 2011 + 2012
+    Year_2012 = replace_na(raw_2010, 0) + replace_na(raw_2011, 0) + replace_na(raw_2012, 0),
+    
+    # 2013 = 2010 + 2011 + 2012 + 2013 (Your LBNL check anchor)
+    Year_2013_test = replace_na(raw_2010, 0) + replace_na(raw_2011, 0) + replace_na(raw_2012, 0) + replace_na(raw_2013, 0)
   ) %>%
-  group_by(State) %>%
-  arrange(State, year) %>%
-  fill(solar_capacity, .direction = "down") %>%
-  mutate(solar_capacity = replace_na(solar_capacity, 0)) %>%
-  pivot_wider(
-    names_from = year, 
-    values_from = solar_capacity
-  ) %>%
-  ungroup()
+  
+  # 5. Output only your clean State name and cumulative columns
+  select(State, Year_2010, Year_2011, Year_2012, Year_2013_test)
 
 ```
 
@@ -266,6 +192,27 @@ for (y in 2013:2024) {
 
 post_wind_all = bind_rows(wind_2010, wind_2011, wind_2012, wind_2013, wind_2014, wind_2015, wind_2016, wind_2017, wind_2018, wind_2019, wind_2020, wind_2021, wind_2022, wind_2023, wind_2024)
 
+wind_2013_uswtdb <- wind_2013_test %>% 
+  rename(State = state, wind_uswtdb = total_wind_mw)
+
+wind_ratios <- wind_2013 %>%
+  rename(wind_eia = wind_capacity) %>%
+  left_join(wind_2013_uswtdb, by = "State") %>%
+  mutate(
+    # Ratio = EIA Capacity / USWTDB Capacity
+    scale_factor = wind_eia / wind_uswtdb
+  ) %>%
+  mutate(scale_factor = if_else(is.nan(scale_factor) | is.infinite(scale_factor), 1, scale_factor)) %>%
+  select(State, scale_factor)
+
+# Scale down 2010-2012 wind capacities to meet the EIA baseline
+post_wind_all <- post_wind_all %>%
+  left_join(wind_ratios, by = "State") %>%
+  mutate(
+    wind_capacity = if_else(year <= 2012, wind_capacity * scale_factor, wind_capacity)
+  ) %>%
+  select(-scale_factor)
+
 # 1. Create a master dataframe containing exactly the 48 contiguous states
 contiguous_48 <- state.abb[!state.abb %in% c("AK", "HI")]
 master_states <- data.frame(State = contiguous_48)
@@ -309,6 +256,163 @@ final_wind_panel_clean <- final_wind_panel %>%
 
 ```{r}
 
+# Clean Post-Solar Data
+
+# Add year columns
+solar_2010 <- solar_wide_cumulative %>%
+  select(State, solar_capacity = Year_2010) %>%
+  mutate(
+    year = 2010,
+    State = state.abb[match(State, state.name)]
+    ) %>%
+  arrange(State)
+
+solar_2011 <- solar_wide_cumulative %>%
+  select(State, solar_capacity = Year_2011) %>%
+  mutate(
+    year = 2011,
+    State = state.abb[match(State, state.name)]) %>%
+  arrange(State)
+
+solar_2012 <- solar_wide_cumulative %>%
+  select(State, solar_capacity = Year_2012) %>%
+  mutate(
+    year = 2012,
+    State = state.abb[match(State, state.name)]) %>%
+  arrange(State)
+
+solar_2013_test <- solar_wide_cumulative %>%
+  select(State, solar_capacity = Year_2013_test) %>%
+  mutate(
+    year = 2013,
+    State = state.abb[match(State, state.name)]) %>%
+  arrange(State)
+
+# Loop through every year from 2013 to 2024
+for (y in 2013:2024) {
+  
+  # 1. Dynamically get the variable name (e.g., "solar_2013")
+  var_name <- paste0("solar_", y)
+  
+  # 2. Grab the dataframe from your environment
+  temp_df <- get(var_name)
+  
+  # 3. Apply the tidyverse pipeline to sum up capacities by state
+  cleaned_df <- temp_df %>%
+    mutate(year = y) %>%  # Dynamically add the current loop's year
+    rename(solar_capacity = `Nameplate Capacity (MW)`) %>% 
+    group_by(State, year) %>% 
+    summarize(solar_capacity = sum(solar_capacity, na.rm = TRUE), .groups = "drop") %>%
+    arrange(State)
+  
+  # 4. Overwrite the messy dataframe in your environment with the cleaned one
+  assign(var_name, cleaned_df)
+}
+
+post_solar_all = bind_rows(solar_2010, solar_2011, solar_2012, solar_2013, solar_2014, solar_2015, solar_2016, solar_2017, solar_2018, solar_2019, solar_2020, solar_2021, solar_2022, solar_2023, solar_2024)
+
+# 1. Isolate the 2013 Berkeley Lab data and convert names to abbreviations
+solar_2013_lbnl_check <- solar_wide_cumulative %>%
+  select(State, solar_lbnl = Year_2013_test) %>%
+  mutate(
+    State = state.abb[match(State, state.name)]
+  )
+
+# 2. Join the EIA 2013 data with the Berkeley Lab data
+solar_ratios <- solar_2013 %>%
+  rename(solar_eia = solar_capacity) %>%
+  left_join(solar_2013_lbnl_check, by = "State") %>%
+  mutate(
+    # Create a conditional scale factor to prevent division by zero or NaN errors
+    scale_factor = if_else(
+      is.na(solar_eia) | is.na(solar_lbnl) | solar_eia == 0 | solar_lbnl == 0,
+      1,                         # Safety switch: default to 1 (do not change the data)
+      solar_eia / solar_lbnl    # Otherwise, calculate the true ratio safely
+    )
+  ) %>%
+  select(State, scale_factor)
+
+# 3. Apply the ratio ONLY to the pre-trends years (2010-2012)
+post_solar_all <- post_solar_all %>%
+  left_join(solar_ratios, by = "State") %>%
+  mutate(
+    # Double check protection for any lingering NAs
+    scale_factor = replace_na(scale_factor, 1),
+    solar_capacity = if_else(year <= 2012, solar_capacity * scale_factor, solar_capacity)
+  ) %>%
+  select(-scale_factor)
+
+# 1. Create a master dataframe containing exactly the 48 contiguous states
+contiguous_48 <- state.abb[!state.abb %in% c("AK", "HI")]
+master_states <- data.frame(State = contiguous_48)
+
+# 2. Group and aggregate FIRST to handle hidden duplicates, then pivot wide
+solar_wide <- post_solar_all %>%
+  group_by(State, year) %>%
+  summarize(solar_capacity = sum(solar_capacity, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = year, 
+    values_from = solar_capacity,
+    names_prefix = "yr_"
+  )
+
+# 3. Left join the master list with your solar data and sort alphabetically
+final_solar_panel <- master_states %>%
+  left_join(solar_wide, by = "State") %>%
+  arrange(State)
+
+# 4. Interpolate missing values cleanly
+final_solar_panel_clean <- final_solar_panel %>%
+  pivot_longer(
+    cols = starts_with("yr_"), 
+    names_to = "year", 
+    values_to = "solar_capacity"
+  ) %>%
+  group_by(State) %>%
+  arrange(State, year) %>%
+  fill(solar_capacity, .direction = "down") %>%
+  mutate(solar_capacity = replace_na(solar_capacity, 0)) %>%
+  pivot_wider(
+    names_from = year, 
+    values_from = solar_capacity
+  ) %>%
+  ungroup()
+
+```
+
+
+```{r}
+
+# 1. Transform wide data to long format for plotting
+plot_data <- final_wind_panel_clean %>%
+  pivot_longer(
+    cols = starts_with("yr_"),
+    names_to = "year",
+    values_to = "capacity"
+  ) %>%
+  # Clean up the "yr_" prefix from the year column so it treats years as numbers
+  mutate(year = as.numeric(gsub("yr_", "", year)))
+
+# 2. Create the line plot
+ggplot(plot_data, aes(x = year, y = capacity, group = State, color = State)) +
+  geom_line(size = 0.8, alpha = 0.7) +
+  geom_point(size = 1.2, alpha = 0.5) +
+  scale_x_continuous(breaks = seq(2010, 2024, by = 2)) +
+  labs(
+    title = "Wind Capacity Over Time by State (48 Contiguous)",
+    x = "Year",
+    y = "Total Wind Capacity (MW)"
+  ) +
+  theme_minimal() +
+  # Since 48 states will make a massive legend, we can hide it 
+  # or keep it depending on your preference:
+  theme(legend.position = "none")
+
+```
+
+
+```{r}
+
 # 1. Transform wide data to long format for all years
 solar_plot_data_all <- final_solar_panel_clean %>%
   pivot_longer(
@@ -332,35 +436,6 @@ ggplot(solar_plot_data_all, aes(x = year, y = capacity, group = State, color = S
   ) +
   theme_minimal() +
   theme(legend.position = "none") # Hides the messy 48-state legend
-
-```
-
-
-```{r}
-
-# 1. Transform wide data to long format for plotting
-plot_data <- final_wind_panel_clean %>%
-  pivot_longer(
-    cols = starts_with("yr_"),
-    names_to = "year",
-    values_to = "capacity"
-  ) %>%
-  # Clean up the "yr_" prefix from the year column so it treats years as numbers
-  mutate(year = as.numeric(gsub("yr_", "", year)))
-
-# 2. Create the line plot
-ggplot(plot_data, aes(x = year, y = capacity, group = State, color = State)) +
-  geom_line(size = 0.8, alpha = 0.7) +
-  geom_point(size = 1.2, alpha = 0.5) +
-  labs(
-    title = "Wind Capacity Over Time by State (48 Contiguous)",
-    x = "Year",
-    y = "Total Wind Capacity (MW)"
-  ) +
-  theme_minimal() +
-  # Since 48 states will make a massive legend, we can hide it 
-  # or keep it depending on your preference:
-  theme(legend.position = "none")
 
 ```
 

@@ -1,18 +1,23 @@
 -------------------------------------------------------------------------------------
       name:  <unnamed>
-       log:  C:\Users\njl119\OneDrive - Case Western Reserve University\My Documents\
-> JoE_Stata.log
+       log:  C:\Users\njl119\OneDrive - Case Western Reserve University\Desktop\JoE_S
+> tata.log
   log type:  text
- opened on:  29 Jun 2026, 16:45:17
+ opened on:  29 Jun 2026, 17:20:20
 
 . 
 end of do-file
 
-. import delimited "C:\Users\njl119\Downloads\panel.csv"
+. do "C:\Users\LOCAL_~1\Temp\STD31b4_000005.tmp"
+
+. import delimited "panel.csv", clear
 (encoding automatically selected: ISO-8859-1)
 (8 vars, 720 obs)
 
-. do "C:\Users\LOCAL_~1\Temp\STD4578_000003.tmp"
+. 
+end of do-file
+
+. do "C:\Users\LOCAL_~1\Temp\STD31b4_000006.tmp"
 
 . *** Begin Stata Coding Here
 . summarize
@@ -32,9 +37,12 @@ is_corporate |        720       .3125    .4638346          0          1
 . 
 end of do-file
 
-. save "C:\Users\njl119\OneDrive - Case Western Reserve University\Desktop\JoE_Stata.
-> dta"
-file C:\Users\njl119\OneDrive - Case Western Reserve
-    University\Desktop\JoE_Stata.dta saved
+. do "C:\Users\LOCAL_~1\Temp\STD31b4_000007.tmp"
 
-. exit
+. save "JoE_Stata.dta", replace
+file JoE_Stata.dta saved
+
+. 
+end of do-file
+
+. exit, clear

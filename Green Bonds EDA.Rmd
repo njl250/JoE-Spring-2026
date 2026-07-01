@@ -701,33 +701,99 @@ ggsave(
 
 ```
 
-<<<<<<< HEAD
+
 ```{r}
-# Clean BEA State GDP Data
 
-library(readr)
+# Merge state population data: 2010-2019 (Intercensal) + 2020-2024 (Vintage 2024)
+
+
+library(readxl)
 library(dplyr)
+library(tidyr)
+
+# Read the 2010-2020 Intercensal file (state rows only) ----
+intercensal_raw <- read_excel(
+  "nst-est2020int-pop.xlsx",
+  sheet = 1,
+  skip = 3  
+)
+
+# Rename columns: first column is geography, next is 2010 base, then 2011-2019, then 2020 census
+colnames(intercensal_raw) <- c(
+  "Geography", "Base2010", paste0("Y", 2010:2019), "Census2020"
+)
 
 
-df <- read_csv("SAGDP1__ALL_AREAS_1997_2025.csv")
+intercensal_states <- intercensal_raw %>%
+  filter(grepl("^\\.", Geography)) %>%
+  mutate(State = sub("^\\.", "", Geography)) %>%
+  filter(State != "Puerto Rico") %>%
+  # filter(State != "District of Columbia") %>%
+  select(State, paste0("Y", 2010:2019)) %>%
+  pivot_longer(
+    cols = paste0("Y", 2010:2019),
+    names_to = "Year",
+    values_to = "Population"
+  ) %>%
+  mutate(Year = as.integer(sub("Y", "", Year)))
 
-# filter
-non_states <- c("United States", "New England", "Mideast", "Great Lakes",
-                "Plains", "Southeast", "Southwest", "Rocky Mountain", "Far West")
+# Read the Vintage 2024 file (state rows only, SUMLEV == 040) ----
+vintage2024_raw <- read.csv("NST-EST2024-POPCHG2020-2024.csv", stringsAsFactors = FALSE)
 
-years <- as.character(2010:2024)
 
-Real_GDP <- df |>
-  filter(
-    trimws(Description) == "Real GDP (millions of chained 2017 dollars) 1/",
-    !is.na(GeoName),
-    !GeoName %in% non_states
-  ) |>
-  select(State = GeoName, all_of(years))
+vintage2024_states <- vintage2024_raw %>%
+  dplyr::filter(trimws(as.character(SUMLEV)) %in% c("40", "040")) %>%
+  dplyr::filter(NAME != "Puerto Rico") %>%
+  dplyr::select(NAME, POPESTIMATE2020, POPESTIMATE2021, POPESTIMATE2022,
+                POPESTIMATE2023, POPESTIMATE2024) %>%
+  rename(State = NAME) %>%
+  pivot_longer(
+    cols = starts_with("POPESTIMATE"),
+    names_to = "Year",
+    values_to = "Population"
+  ) %>%
+  mutate(Year = as.integer(sub("POPESTIMATE", "", Year)))
+
+
+# Merge into one long-format table: 2010-2024, states only 
+
+state_population_2010_2024 <- dplyr::bind_rows(intercensal_states, vintage2024_states) %>%
+  arrange(State, Year)
+
+
+# Reshape to wide format: one row per state, one column per year 
+state_population_wide <- state_population_2010_2024 %>%
+  pivot_wider(names_from = Year, values_from = Population, names_prefix = "Y")
+
+# Save outputs
+write.csv(state_population_2010_2024, "state_population_2010_2024_long.csv", row.names = FALSE)
+write.csv(state_population_wide, "state_population_2010_2024_wide.csv", row.names = FALSE)
+
 ```
 
+```{r}
+# Corporate green bond issuance years
+cat("Corporate green bond issuance by year\n\n")
+stem(policy_clean$corp_start[!is.na(policy_clean$corp_start)])
 
+# Public/municipal green bond issuance years
+cat("\nPublic/municipal green bond issuance by year\n\n")
+stem(policy_clean$muni_start[!is.na(policy_clean$muni_start)], scale = 2)
+```
+```{r}
+# add population (and per capita GDP) to the panel, which already has real_gdp
+library(dplyr)
 
-=======
->>>>>>> f8d617110aa51ad6254bc7cd39a6d8ef3a50d160
+# population data uses full state names, convert to abbreviations to match the panel
+population_long <- state_population_2010_2024 %>%
+  rename(year = Year) %>%
+  mutate(State = case_when(
+    State == "District of Columbia" ~ "DC",
+    TRUE ~ state.abb[match(State, state.name)]
+  ))
 
+final_joint_regression_panel <- final_joint_regression_panel %>%
+  select(-Population, -real_gdp_per_capita) %>%
+  left_join(population_long, by = c("State", "year")) %>%
+  mutate(real_gdp_per_capita = real_gdp / Population)
+```

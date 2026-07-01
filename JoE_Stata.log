@@ -3,21 +3,21 @@
        log:  C:\Users\njl119\OneDrive - Case Western Reserve University\Desktop\JoE_S
 > tata.log
   log type:  text
- opened on:  29 Jun 2026, 17:20:20
+ opened on:   1 Jul 2026, 12:49:39
 
 . 
 end of do-file
 
-. do "C:\Users\LOCAL_~1\Temp\STD31b4_000005.tmp"
+. do "C:\Users\LOCAL_~1\Temp\STD254c_000001.tmp"
 
 . import delimited "panel.csv", clear
 (encoding automatically selected: ISO-8859-1)
-(8 vars, 720 obs)
+(13 vars, 720 obs)
 
 . 
 end of do-file
 
-. do "C:\Users\LOCAL_~1\Temp\STD31b4_000006.tmp"
+. do "C:\Users\LOCAL_~1\Temp\STD254c_000002.tmp"
 
 . *** Begin Stata Coding Here
 . summarize
@@ -28,19 +28,86 @@ end of do-file
         year |        720        2017    4.323497       2010       2024
 wind_capac~y |        720      1951.1    4193.008          0    42282.9
 solar_capa~y |        720     768.131    2300.769          0    22562.9
-is_corporate |        720       .3125    .4638346          0          1
+  population |        720     6715555     7276102     564402   3.95e+07
 -------------+---------------------------------------------------------
-   is_public |        720    .3486111    .4768619          0          1
+    real_gdp |        720    4.03e+11    4.98e+11   3.09e+10   3.31e+12
+is_corporate |        720    .3041667    .4603734          0          1
+   is_public |        720    .3569444    .4794313          0          1
           gb |        720    .4513889    .4979773          0          1
       is_rps |        720    .6680556    .4712385          0          1
+-------------+---------------------------------------------------------
+real_gdp_p~a |        720    56966.01    11013.67   35760.45   92617.73
+wind_capac~a |        720    .0005212    .0009708          0   .0063426
+solar_capa~a |        720    .0000899    .0001675          0   .0016175
+
+. describe
+
+Contains data
+ Observations:           720                  
+    Variables:            13                  
+-------------------------------------------------------------------------------------
+Variable      Storage   Display    Value
+    name         type    format    label      Variable label
+-------------------------------------------------------------------------------------
+state           str2    %9s                   State
+year            int     %8.0g                 
+wind_capacity   float   %9.0g                 
+solar_capacity  float   %9.0g                 
+population      long    %12.0g                Population
+real_gdp        double  %10.0g                
+is_corporate    byte    %8.0g                 
+is_public       byte    %8.0g                 
+gb              byte    %8.0g                 
+is_rps          byte    %8.0g                 
+real_gdp_per_~a float   %9.0g                 
+wind_capacity~a float   %9.0g                 
+solar_capacit~a float   %9.0g                 
+-------------------------------------------------------------------------------------
+Sorted by: 
+     Note: Dataset has changed since last saved.
+
+. 
+. *** Initialize the panel data structure
+. encode state, gen(state_id)
+
+. xtset state_id year
+
+Panel variable: state_id (strongly balanced)
+ Time variable: year, 2010 to 2024
+         Delta: 1 unit
+
+. 
+. *** Natural log our wind capacity per capita, solar capacity per capita, and GDP pe
+> r capita variables
+. *** To avoid generating missing values with ln(0), add 1 to the capacity (ln(x + 1)
+> )
+. gen ln_wind_capacity = ln(wind_capacity_per_capita + 1)
+
+. gen ln_solar_capacity = ln(solar_capacity_per_capita + 1)
+
+. 
+. *** GDP per capita is always > 0
+. gen ln_gdp_per_capita = ln(real_gdp_per_capita)
+
+. 
+. *** RPS x Corporate Interaction Term
+. gen rps_x_corporate = is_rps * is_corporate
+
+. 
+. *** RPS x Public Interaction Term
+. gen rps_x_public = is_rps * is_public
+
+. 
+. *** RPS x Any Green Bond Interaction Term
+. gen rps_x_anyGB = is_rps * gb
 
 . 
 end of do-file
 
-. do "C:\Users\LOCAL_~1\Temp\STD31b4_000007.tmp"
+. do "C:\Users\LOCAL_~1\Temp\STD254c_000003.tmp"
 
-. save "JoE_Stata.dta", replace
-file JoE_Stata.dta saved
+. save "JoE_Stata_1.dta", replace
+file JoE_Stata_1.dta saved
 
 . 
 end of do-file

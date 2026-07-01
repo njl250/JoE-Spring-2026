@@ -65,6 +65,16 @@ pre_wind <- read_csv("Wind Pre.csv")
 # Pre-Trends Solar Data
 pre_solar <- read_excel("Solar 2010 - 2012.xlsx")
 
+# Real GDP Data 
+gdp_raw <- read_csv("SAGDP1_ALL_AREAS_1997_2025.csv") 
+
+# State Population Data
+intercensal_raw <- read_excel(
+  "nst-est2020int-pop.xlsx",
+  sheet = 1,
+  skip = 3  
+)
+
 ```
 
 
@@ -383,333 +393,7 @@ final_solar_panel_clean <- final_solar_panel %>%
 
 ```{r}
 
-# 1. Transform wide data to long format for plotting
-plot_data <- final_wind_panel_clean %>%
-  pivot_longer(
-    cols = starts_with("yr_"),
-    names_to = "year",
-    values_to = "capacity"
-  ) %>%
-  # Clean up the "yr_" prefix from the year column so it treats years as numbers
-  mutate(year = as.numeric(gsub("yr_", "", year)))
-
-# 2. Create the line plot
-ggplot(plot_data, aes(x = year, y = capacity, group = State, color = State)) +
-  geom_line(size = 0.8, alpha = 0.7) +
-  geom_point(size = 1.2, alpha = 0.5) +
-  scale_x_continuous(breaks = seq(2010, 2024, by = 2)) +
-  labs(
-    title = "Wind Capacity Over Time For Lower 48 States (2010 - 2024)",
-    x = "Year",
-    y = "Total Wind Capacity (MW)"
-  ) +
-  theme_minimal() +
-  theme(
-    legend.position = "none",
-    plot.title = element_text(hjust = 0.5, face = "bold"),
-    plot.subtitle = element_text(hjust = 0.5)
-  )
-
-ggsave(
-  filename = "wind_capacity_timeline.png",
-  width = 10,       # Width in inches
-  height = 6,       # Height in inches
-  dpi = 300         # Publication-quality resolution (300 dots-per-inch)
-)
-
-```
-
-
-```{r}
-
-# 1. Transform wide data to long format for all years
-solar_plot_data_all <- final_solar_panel_clean %>%
-  pivot_longer(
-    cols = starts_with("yr_"),
-    names_to = "year",
-    values_to = "capacity"
-  ) %>%
-  # Clean up the "yr_" prefix and turn year into a number
-  mutate(year = as.numeric(gsub("yr_", "", year)))
-
-# 2. Create the full-timeline line plot
-ggplot(solar_plot_data_all, aes(x = year, y = capacity, group = State, color = State)) +
-  geom_line(size = 0.8, alpha = 0.7) +
-  geom_point(size = 1.2, alpha = 0.6) +
-  # Ensure the X-axis handles the wide timeframe cleanly
-  scale_x_continuous(breaks = seq(2010, 2024, by = 2)) + 
-  labs(
-    title = "Solar Capacity Over Time For Lower 48 States (2010 - 2024)",
-    x = "Year",
-    y = "Total Solar Capacity (MW)"
-  ) +
-  theme_minimal() +
-  theme(
-    legend.position = "none",
-    plot.title = element_text(hjust = 0.5, face = "bold"),
-    plot.subtitle = element_text(hjust = 0.5)
-  )
-
-ggsave(
-  filename = "solar_capacity_timeline.png",
-  width = 10,       # Width in inches
-  height = 6,       # Height in inches
-  dpi = 300         # Publication-quality resolution (300 dots-per-inch)
-)
-
-```
-
-
-```{r}
-
-# Building the Panel Dataset
-
-# Create a dedicated long-format version for regressions and plotting
-final_wind_panel_long <- final_wind_panel %>%
-  # 1. Pivot permanently to long format
-  pivot_longer(
-    cols = starts_with("yr_"), 
-    names_to = "year", 
-    values_to = "wind_capacity"
-  ) %>%
-  # 2. Strip "yr_" so the year column becomes a clean, parseable number
-  mutate(year = as.numeric(gsub("yr_", "", year))) %>%
-  # 3. Sort sequentially by state and year to prepare for the carry-forward step
-  group_by(State) %>%
-  arrange(State, year) %>%
-  # 4. Handle missing data gaps using Last Observation Carried Forward (LOCF)
-  fill(wind_capacity, .direction = "down") %>%
-  # 5. Switch any remaining early NAs to 0
-  mutate(wind_capacity = replace_na(wind_capacity, 0)) %>%
-  # 6. Ungroup so it behaves like a standard dataframe for downstream packages
-  ungroup()
-
-# Create a dedicated long-format version for solar regressions and plotting
-final_solar_panel_long <- final_solar_panel %>%
-  # 1. Pivot permanently to long format
-  pivot_longer(
-    cols = starts_with("yr_"), 
-    names_to = "year", 
-    values_to = "solar_capacity"
-  ) %>%
-  # 2. Strip "yr_" so the year column becomes a clean, parseable number
-  mutate(year = as.numeric(gsub("yr_", "", year))) %>%
-  # 3. Sort sequentially by state and year to prepare for the carry-forward step
-  group_by(State) %>%
-  arrange(State, year) %>%
-  # 4. Handle missing data gaps using Last Observation Carried Forward (LOCF)
-  fill(solar_capacity, .direction = "down") %>%
-  # 5. Switch any remaining early NAs to 0
-  mutate(solar_capacity = replace_na(solar_capacity, 0)) %>%
-  # 6. Ungroup so it behaves nicely for downstream models
-  ungroup()
-
-# One-hot-encoding of corporate & munucipal issuances, and RPS Issuances
-# Corporate: 1 if current year >= corporate year, otherwise 0
-# Municipal: 1 if current year >= municipal year, otherwise 0
-# RPS: 1 if current year >= RPS enacted AND current year < RPS expired. If never expired, remains 1
-# GB: 1 if a state issued either type of green bond, 0 if a state issued neither
-policy_clean <- GBI %>%
-  # 1. Standardize state names to postal abbreviations
-  mutate(State = state.abb[match(State, state.name)]) %>%
-  filter(!is.na(State)) %>%
-  
-  # 2. Convert character strings/NAs to proper numeric years or infinity
-  mutate(
-    corp_start  = as.numeric(gsub("N/A", NA, `Corporate Year`)),
-    muni_start  = as.numeric(gsub("N/A", NA, `Municipal Year`)),
-    rps_start   = as.numeric(gsub("N/A", NA, `RPS Year`)),
-    rps_end     = as.numeric(gsub("N/A", NA, `RPS Repealed/Expired`)),
-    
-    # If RPS was never repealed, set its expiration to infinity so it stays active
-    rps_end = if_else(is.na(rps_end), Inf, rps_end)
-  ) %>%
-  select(State, corp_start, muni_start, rps_start, rps_end)
-
-# 2. Merge Wind and Solar long panels into a single JOINT panel
-joint_energy_panel <- final_wind_panel_long %>%
-  full_join(final_solar_panel_long, by = c("State", "year"))
-
-# Combine panels and compute the logical thresholds, including the combined 'gb' column
-final_joint_regression_panel <- final_wind_panel_long %>%
-  # Join wind and solar together side-by-side
-  full_join(final_solar_panel_long, by = c("State", "year")) %>%
-  
-  # Join your cleaned timeline parameters
-  left_join(policy_clean, by = "State") %>%
-  
-  # Build the binary metrics dynamically
-  mutate(
-    is_corporate = if_else(!is.na(corp_start) & year >= corp_start, 1, 0),
-    is_public    = if_else(!is.na(muni_start) & year >= muni_start, 1, 0),
-    gb           = if_else(is_corporate == 1 | is_public == 1, 1, 0),
-    
-    # RPS Policy Dummy
-    is_rps       = if_else(!is.na(rps_start) & year >= rps_start & year < rps_end, 1, 0)
-  ) %>%
-  
-  # Clean up helper metrics
-  select(-corp_start, -muni_start, -rps_start, -rps_end)
-
-# Siya, once we add the rest of the variables to this panel, we'll export it as a csv
-# Add and clean the rest of the variables below:
-
-# Export final panel dataset to a CSV file
-write.csv(final_joint_regression_panel, "panel.csv", row.names = FALSE)
-
-```
-
-
-```{r}
-
-# Wind map
-
-# 1. Determine which states are Never Treated (gb == 0 globally)
-never_treated_states <- final_joint_regression_panel %>%
-  group_by(State) %>%
-  summarize(ever_issued = max(gb, na.rm = TRUE), .groups = "drop") %>%
-  filter(ever_issued == 0) %>%
-  pull(State)
-
-# 2. Prepare 2024 data
-wind_map_2024 <- final_wind_panel_clean %>%
-  select(State, capacity = yr_2024) %>%
-  mutate(region = tolower(state.name[match(State, state.abb)]))
-
-us_states <- map_data("state")
-
-wind_geo_data <- us_states %>%
-  left_join(wind_map_2024, by = "region")
-
-# 3. Create a label dataset containing ONLY the never-treated states
-never_treated_labels <- data.frame(
-  State = state.abb,
-  long = state.center$x,
-  lat = state.center$y
-) %>%
-  # Filter out AK and HI, and isolate ONLY the never-treated control states
-  filter(!State %in% c("AK", "HI"), State %in% never_treated_states)
-
-# 4. Generate Wind Map
-ggplot() +
-  # Base map layer showing capacities
-  geom_polygon(data = wind_geo_data, aes(x = long, y = lat, group = group, fill = capacity), 
-               color = "white", size = 0.2) +
-  
-  # Overlay text labels ONLY for the never-treated states
-  geom_text(data = never_treated_labels, aes(x = long, y = lat, label = State), 
-            color = "black", fontface = "bold", size = 3.5, check_overlap = TRUE) +
-  
-  # Custom continuous gradient interpolation using your colors
-  scale_fill_gradientn(
-    name = "Total MW",
-    colors = c("#E6D3B3", "#D49A73", "#C07A5A"),
-    labels = scales::comma_format(),
-    na.value = "grey90"
-  ) +
-  coord_map("albers", lat0 = 39, lat1 = 45) + 
-  labs(
-    title = "Cumulative US Wind Capacity (MW) by State (2024)",
-    subtitle = "Labeled states represent the never-treated control group"
-  ) +
-  theme_void() + 
-  theme(
-    legend.position = "right",
-    legend.box.margin = margin(t = 0, r = 20, b = 0, l = 0),
-    legend.margin = margin(t = 0, r = 0, b = 0, l = 0),
-    plot.title = element_text(hjust = 0.5, face = "bold"),
-    plot.subtitle = element_text(hjust = 0.5, size = 10, color = "gray30")
-  )
-
-ggsave(
-  filename = "wind_map.png",
-  width = 10,       # Width in inches
-  height = 6,       # Height in inches
-  dpi = 300         # Publication-quality resolution (300 dots-per-inch)
-)
-
-```
-
-
-```{r}
-
-# Solar map
-
-# 1. Determine which states are Never Treated (gb == 0 globally)
-never_treated_states <- final_joint_regression_panel %>%
-  group_by(State) %>%
-  summarize(ever_issued = max(gb, na.rm = TRUE), .groups = "drop") %>%
-  filter(ever_issued == 0) %>%
-  pull(State)
-
-# 2. Prepare 2024 Solar data
-solar_map_2024 <- final_solar_panel_clean %>%
-  select(State, capacity = yr_2024) %>%
-  mutate(region = tolower(state.name[match(State, state.abb)]))
-
-us_states <- map_data("state")
-
-solar_geo_data <- us_states %>%
-  left_join(solar_map_2024, by = "region")
-
-# 3. Create a label dataset containing ONLY the never-treated states
-never_treated_labels <- data.frame(
-  State = state.abb,
-  long = state.center$x,
-  lat = state.center$y
-) %>%
-  # Filter out AK and HI, and isolate ONLY the never-treated control states
-  filter(!State %in% c("AK", "HI"), State %in% never_treated_states)
-
-# 4. Generate Solar Map
-ggplot() +
-  # Base map layer showing solar capacities
-  geom_polygon(data = solar_geo_data, aes(x = long, y = lat, group = group, fill = capacity), 
-               color = "white", size = 0.2) +
-  
-  # Overlay text labels ONLY for the never-treated states
-  geom_text(data = never_treated_labels, aes(x = long, y = lat, label = State), 
-            color = "black", fontface = "bold", size = 3.5, check_overlap = TRUE) +
-  
-  # Custom continuous gradient interpolation using your colors
-  scale_fill_gradientn(
-    name = "Total MW",
-    colors = c("#E6D3B3", "#D49A73", "#C07A5A"),
-    labels = scales::comma_format(),
-    na.value = "grey90"
-  ) +
-  coord_map("albers", lat0 = 39, lat1 = 45) + 
-  labs(
-    title = "Cumulative US Solar Capacity (MW) by State (2024)",
-    subtitle = "Labeled states represent the never-treated control group"
-  ) +
-  theme_void() + 
-  theme(
-    legend.position = "right",
-    legend.box.margin = margin(t = 0, r = 20, b = 0, l = 0),
-    legend.margin = margin(t = 0, r = 0, b = 0, l = 0),
-    plot.title = element_text(hjust = 0.5, face = "bold"),
-    plot.subtitle = element_text(hjust = 0.5, size = 10, color = "gray30")
-  )
-
-ggsave(
-  filename = "solar_map.png",
-  width = 10,       # Width in inches
-  height = 6,       # Height in inches
-  dpi = 300         # Publication-quality resolution (300 dots-per-inch)
-)
-
-```
-
-
-```{r}
-
 # Merge state population data: 2010-2019 (Intercensal) + 2020-2024 (Vintage 2024)
-
-
-library(readxl)
-library(dplyr)
-library(tidyr)
 
 # Read the 2010-2020 Intercensal file (state rows only) ----
 intercensal_raw <- read_excel(
@@ -765,35 +449,474 @@ state_population_2010_2024 <- dplyr::bind_rows(intercensal_states, vintage2024_s
 state_population_wide <- state_population_2010_2024 %>%
   pivot_wider(names_from = Year, values_from = Population, names_prefix = "Y")
 
+# Map full state names to 2-letter postal codes to create the final population_long
+population_long <- state_population_2010_2024 %>%
+  filter(State %in% c(state.name, "District of Columbia")) %>%
+  mutate(
+    year = as.numeric(Year),
+    Population = as.numeric(Population),
+    State = case_when(
+      State == "District of Columbia" ~ "DC",
+      TRUE ~ state.abb[match(State, state.name)]
+    )
+  ) %>%
+  select(State, year, Population)
+
 # Save outputs
 write.csv(state_population_2010_2024, "state_population_2010_2024_long.csv", row.names = FALSE)
 write.csv(state_population_wide, "state_population_2010_2024_wide.csv", row.names = FALSE)
 
 ```
 
+
 ```{r}
-# Corporate green bond issuance years
-cat("Corporate green bond issuance by year\n\n")
-stem(policy_clean$corp_start[!is.na(policy_clean$corp_start)])
 
-# Public/municipal green bond issuance years
-cat("\nPublic/municipal green bond issuance by year\n\n")
-stem(policy_clean$muni_start[!is.na(policy_clean$muni_start)], scale = 2)
+# Cleaning Real GDP data
+
+gdp_long <- gdp_raw %>%
+  # 2. Keep ONLY the Real GDP rows (LineCode 1)
+  filter(LineCode == 1) %>%
+  
+  # 3. Drop the "United States" row and any regional summaries
+  filter(GeoName %in% c(state.name, "District of Columbia")) %>%
+  
+  # 4. Keep only the State name column and your study window (2010 to 2024)
+  select(State = GeoName, `2010`:`2024`) %>%
+  
+  # 5. Reshape from wide (columns) to long (rows) to match your population data
+  pivot_longer(
+    cols = `2010`:`2024`,
+    names_to = "year",
+    values_to = "real_gdp"
+  ) %>%
+  
+  # 6. Fix data types, scale by 1 million, and convert full state names to 2-letter postal codes
+  mutate(
+    year = as.numeric(year),
+    # Convert from "Millions of Dollars" to raw dollars so it matches raw population counts
+    real_gdp = as.numeric(real_gdp) * 1000000, 
+    State = case_when(
+      State == "District of Columbia" ~ "DC",
+      TRUE ~ state.abb[match(State, state.name)]
+    )
+  )
+
 ```
+
+
 ```{r}
-# add population (and per capita GDP) to the panel, which already has real_gdp
-library(dplyr)
 
-# population data uses full state names, convert to abbreviations to match the panel
-population_long <- state_population_2010_2024 %>%
-  rename(year = Year) %>%
-  mutate(State = case_when(
-    State == "District of Columbia" ~ "DC",
-    TRUE ~ state.abb[match(State, state.name)]
-  ))
+# Building the Panel Dataset
 
-final_joint_regression_panel <- final_joint_regression_panel %>%
-  select(-Population, -real_gdp_per_capita) %>%
-  left_join(population_long, by = c("State", "year")) %>%
-  mutate(real_gdp_per_capita = real_gdp / Population)
+# Create a dedicated long-format version for regressions and plotting
+final_wind_panel_long <- final_wind_panel %>%
+# Remove any rows where the operational year is missing/blank
+# 1. Pivot permanently to long format
+ pivot_longer(
+   cols = starts_with("yr_"), 
+   names_to = "year", 
+   values_to = "wind_capacity"
+ ) %>%
+# 2. Strip "yr_" so the year column becomes a clean, parseable number
+ mutate(year = as.numeric(gsub("yr_", "", year))) %>%
+# 3. Sort sequentially by state and year to prepare for the carry-forward step
+ group_by(State) %>%
+ arrange(State, year) %>%
+# 4. Handle missing data gaps using Last Observation Carried Forward (LOCF)
+ fill(wind_capacity, .direction = "down") %>%
+# 5. Switch any remaining early NAs to 0
+ mutate(wind_capacity = replace_na(wind_capacity, 0)) %>%
+# 6. Ungroup so it behaves like a standard dataframe for downstream packages
+ ungroup()
+
+# Create a dedicated long-format version for solar regressions and plotting
+final_solar_panel_long <- final_solar_panel %>%
+# 1. Pivot permanently to long format
+ pivot_longer(
+   cols = starts_with("yr_"), 
+   names_to = "year", 
+   values_to = "solar_capacity"
+ ) %>%
+# 2. Strip "yr_" so the year column becomes a clean, parseable number
+ mutate(year = as.numeric(gsub("yr_", "", year))) %>%
+# 3. Sort sequentially by state and year to prepare for the carry-forward step
+ group_by(State) %>%
+ arrange(State, year) %>%
+# 4. Handle missing data gaps using Last Observation Carried Forward (LOCF)
+ fill(solar_capacity, .direction = "down") %>%
+# 5. Switch any remaining early NAs to 0
+ mutate(solar_capacity = replace_na(solar_capacity, 0)) %>%
+# 6. Ungroup so it behaves nicely for downstream models
+ ungroup()
+
+# One-hot-encoding of corporate & munucipal issuances, and RPS Issuances
+# Corporate: 1 if current year >= corporate year, otherwise 0
+# Municipal: 1 if current year >= municipal year, otherwise 0
+# RPS: 1 if current year >= RPS enacted AND current year < RPS expired. If never expired, remains 1
+# GB: 1 if a state issued either type of green bond, 0 if a state issued neither
+policy_clean <- GBI %>%
+# 1. Standardize state names to postal abbreviations
+ mutate(State = state.abb[match(State, state.name)]) %>%
+ filter(!is.na(State)) %>%
+  
+# 2. Convert character strings/NAs to proper numeric years or infinity
+ mutate(
+   corp_start  = as.numeric(gsub("N/A", NA, `Corporate Year`)),
+   muni_start  = as.numeric(gsub("N/A", NA, `Municipal Year`)),
+   rps_start   = as.numeric(gsub("N/A", NA, `RPS Year`)),
+   rps_end     = as.numeric(gsub("N/A", NA, `RPS Repealed/Expired`)),
+    
+   # If RPS was never repealed, set its expiration to infinity so it stays active
+   rps_end = if_else(is.na(rps_end), Inf, rps_end)
+ ) %>%
+ select(State, corp_start, muni_start, rps_start, rps_end)
+
+# 2. Merge Wind and Solar long panels into a single JOINT panel
+joint_energy_panel <- final_wind_panel_long %>%
+ full_join(final_solar_panel_long, by = c("State", "year"))
+
+# Combine panels and compute the logical thresholds, including the combined 'gb' column
+final_joint_regression_panel <- final_wind_panel_long %>%
+# Join wind and solar together side-by-side
+ full_join(final_solar_panel_long, by = c("State", "year")) %>%
+  
+# Join your cleaned timeline parameters
+ left_join(policy_clean, by = "State") %>%
+
+# Join population metrics sequentially
+ left_join(population_long, by = c("State", "year")) %>%
+
+# Join BEA real GDP metrics sequentially
+ left_join(gdp_long, by = c("State", "year")) %>%
+  
+# Build the binary metrics dynamically
+ mutate(
+   is_corporate = if_else(!is.na(corp_start) & year >= corp_start, 1, 0),
+   is_public    = if_else(!is.na(muni_start) & year >= muni_start, 1, 0),
+   gb           = if_else(is_corporate == 1 | is_public == 1, 1, 0),
+    
+   # RPS Policy Dummy
+   is_rps       = if_else(!is.na(rps_start) & year >= rps_start & year < rps_end, 1, 0)
+ ) %>%
+
+# Calculate all per capita and economic density metrics
+ mutate(
+   real_gdp_per_capita       = real_gdp / Population,
+   wind_capacity_per_capita  = wind_capacity / Population,
+   solar_capacity_per_capita = solar_capacity / Population
+ ) %>%
+  
+# Clean up helper metrics
+ select(-corp_start, -muni_start, -rps_start, -rps_end)
+
+# Export final panel dataset to a CSV file
+write.csv(final_joint_regression_panel, "panel.csv", row.names = FALSE)
+
 ```
+
+
+```{r}
+
+# Wind Line Chart
+
+# 1. Pull data directly from the completed master panel for plotting
+plot_data <- final_joint_regression_panel %>%
+  # Keep only the columns we need for this timeline visualization
+  select(State, year, wind_capacity_per_capita)
+
+# 2. Create the line plot showing per capita distribution
+ggplot(plot_data, aes(x = year, y = wind_capacity_per_capita, group = State, color = State)) +
+  geom_line(size = 0.8, alpha = 0.7) +
+  geom_point(size = 1.2, alpha = 0.5) +
+  scale_x_continuous(breaks = seq(2010, 2024, by = 2)) +
+  labs(
+    title = "Wind Capacity Per Capita Over Time For Lower 48 States (2010 - 2024)",
+    x = "Year",
+    y = "Wind Capacity Per Capita (MW / Population)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+
+ggsave(
+  filename = "wind_capacity_per_capita_timeline.png",
+  width = 10,       # Width in inches
+  height = 6,       # Height in inches
+  dpi = 300         # Publication-quality resolution (300 dots-per-inch)
+)
+
+```
+
+
+```{r}
+
+# Solar Line Chart
+
+# 1. Pull data directly from the completed master panel for plotting
+solar_plot_data_all <- final_joint_regression_panel %>%
+  # Keep only the columns we need for this timeline visualization
+  select(State, year, solar_capacity_per_capita)
+
+# 2. Create the full-timeline line plot
+ggplot(solar_plot_data_all, aes(x = year, y = solar_capacity_per_capita, group = State, color = State)) +
+  geom_line(size = 0.8, alpha = 0.7) +
+  geom_point(size = 1.2, alpha = 0.6) +
+  # Ensure the X-axis handles the wide timeframe cleanly
+  scale_x_continuous(breaks = seq(2010, 2024, by = 2)) + 
+  labs(
+    title = "Solar Capacity Per Capita Over Time For Lower 48 States (2010 - 2024)",
+    x = "Year",
+    y = "Solar Capacity Per Capita (MW / Population)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+
+ggsave(
+  filename = "solar_capacity_per_capita_timeline.png",
+  width = 10,       # Width in inches
+  height = 6,       # Height in inches
+  dpi = 300         # Publication-quality resolution (300 dots-per-inch)
+)
+
+```
+
+
+```{r}
+
+# Wind map
+
+# 1. Determine which states are Never Treated (gb == 0 globally)
+never_treated_states <- final_joint_regression_panel %>%
+  group_by(State) %>%
+  summarize(ever_issued = max(gb, na.rm = TRUE), .groups = "drop") %>%
+  filter(ever_issued == 0) %>%
+  pull(State)
+
+# 2. Prepare 2024 data
+wind_map_2024 <- final_joint_regression_panel %>%
+  filter(year == 2024) %>%
+  select(State, capacity = wind_capacity_per_capita) %>%
+  mutate(region = tolower(state.name[match(State, state.abb)]))
+
+us_states <- map_data("state")
+
+wind_geo_data <- us_states %>%
+  left_join(wind_map_2024, by = "region")
+
+# 3. Create a label dataset containing ONLY the never-treated states
+never_treated_labels <- data.frame(
+  State = state.abb,
+  long = state.center$x,
+  lat = state.center$y
+) %>%
+  # Filter out AK and HI, and isolate ONLY the never-treated control states
+  filter(!State %in% c("AK", "HI"), State %in% never_treated_states)
+
+# 4. Generate Wind Map
+ggplot() +
+  # Base map layer showing capacities
+  geom_polygon(data = wind_geo_data, aes(x = long, y = lat, group = group, fill = capacity), 
+               color = "white", size = 0.2) +
+  
+  # Overlay text labels ONLY for the never-treated states
+  geom_text(data = never_treated_labels, aes(x = long, y = lat, label = State), 
+            color = "black", fontface = "bold", size = 3.5, check_overlap = TRUE) +
+  
+  # Custom continuous gradient interpolation using your colors
+  scale_fill_gradientn(
+    name = "MW / Capita",
+    colors = c("#E6D3B3", "#D49A73", "#C07A5A"),
+    labels = scales::comma_format(),
+    na.value = "grey90"
+  ) +
+  coord_map("albers", lat0 = 39, lat1 = 45) + 
+  labs(
+    title = "Cumulative US Wind Capacity Per Capita by State (2024)",
+    subtitle = "Labeled states represent the never-treated control group"
+  ) +
+  theme_void() + 
+  theme(
+    legend.position = "right",
+    legend.box.margin = margin(t = 0, r = 20, b = 0, l = 0),
+    legend.margin = margin(t = 0, r = 0, b = 0, l = 0),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 10, color = "gray30")
+  )
+
+ggsave(
+  filename = "wind_map_per_capita.png",
+  width = 10,       # Width in inches
+  height = 6,       # Height in inches
+  dpi = 300         # Publication-quality resolution (300 dots-per-inch)
+)
+
+```
+
+
+```{r}
+
+# Solar map
+
+# 1. Determine which states are Never Treated (gb == 0 globally)
+never_treated_states <- final_joint_regression_panel %>%
+  group_by(State) %>%
+  summarize(ever_issued = max(gb, na.rm = TRUE), .groups = "drop") %>%
+  filter(ever_issued == 0) %>%
+  pull(State)
+
+# 2. Prepare 2024 Solar data
+solar_map_2024 <- final_joint_regression_panel %>%
+  filter(year == 2024) %>%
+  select(State, capacity = solar_capacity_per_capita) %>%
+  mutate(region = tolower(state.name[match(State, state.abb)]))
+
+us_states <- map_data("state")
+
+solar_geo_data <- us_states %>%
+  left_join(solar_map_2024, by = "region")
+
+# 3. Create a label dataset containing ONLY the never-treated states
+never_treated_labels <- data.frame(
+  State = state.abb,
+  long = state.center$x,
+  lat = state.center$y
+) %>%
+  # Filter out AK and HI, and isolate ONLY the never-treated control states
+  filter(!State %in% c("AK", "HI"), State %in% never_treated_states)
+
+# 4. Generate Solar Map
+ggplot() +
+  # Base map layer showing solar capacities
+  geom_polygon(data = solar_geo_data, aes(x = long, y = lat, group = group, fill = capacity), 
+               color = "white", size = 0.2) +
+  
+  # Overlay text labels ONLY for the never-treated states
+  geom_text(data = never_treated_labels, aes(x = long, y = lat, label = State), 
+            color = "black", fontface = "bold", size = 3.5, check_overlap = TRUE) +
+  
+  # Custom continuous gradient interpolation using your colors
+  scale_fill_gradientn(
+    name = "MW / Capita",
+    colors = c("#E6D3B3", "#D49A73", "#C07A5A"),
+    labels = scales::comma_format(),
+    na.value = "grey90"
+  ) +
+  coord_map("albers", lat0 = 39, lat1 = 45) + 
+  labs(
+    title = "Cumulative US Solar Capacity Per Capita by State (2024)",
+    subtitle = "Labeled states represent the never-treated control group"
+  ) +
+  theme_void() + 
+  theme(
+    legend.position = "right",
+    legend.box.margin = margin(t = 0, r = 20, b = 0, l = 0),
+    legend.margin = margin(t = 0, r = 0, b = 0, l = 0),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 10, color = "gray30")
+  )
+
+ggsave(
+  filename = "solar_map_per_capita.png",
+  width = 10,       # Width in inches
+  height = 6,       # Height in inches
+  dpi = 300         # Publication-quality resolution (300 dots-per-inch)
+)
+
+```
+
+
+```{r}
+
+# Corporate Green Bond Stem and Leaf Plot
+
+# Filter out NAs and calculate a stacking index for overlapping years
+corp_plot_data <- policy_clean %>%
+  filter(!is.na(corp_start)) %>%
+  select(State, year = corp_start) %>%
+  group_by(year) %>%
+  mutate(stack_index = row_number()) %>%
+  ungroup()
+
+# Generate Corporate Timeline
+ggplot(corp_plot_data, aes(x = year, y = stack_index, label = State)) +
+  # Draw a clean baseline
+  geom_hline(yintercept = 0, color = "gray50", size = 0.5) +
+  # Replace dots/digits with actual state abbreviations
+  geom_text(color = "#C07A5A", fontface = "bold", size = 4.5) +
+  # Force x-axis to show clear integer years
+  scale_x_continuous(breaks = seq(min(corp_plot_data$year), max(corp_plot_data$year), by = 1)) +
+  # Pad the vertical axis slightly so text doesn't cut off
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2))) +
+  labs(
+    title = "Corporate Green Bond Issuance Timeline by State",
+    x = "Year of Initial Issuance",
+    y = ""
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    panel.grid.major.y = element_blank(), # Clear horizontal lines to keep it looking like a stem plot
+    panel.grid.minor.y = element_blank(),
+    axis.text.y = element_blank(),       # Hide y-axis numbers since height just represents stacking
+    axis.ticks.y = element_blank()
+  )
+
+ggsave(
+  filename = "corporate_issuance_timeline.png",
+  width = 10,
+  height = 5,
+  dpi = 300
+)
+
+# Public/Municipal Green Bond Stem and Leaf Plot
+
+# Filter out NAs and calculate a stacking index for overlapping years
+muni_plot_data <- policy_clean %>%
+  filter(!is.na(muni_start)) %>%
+  select(State, year = muni_start) %>%
+  group_by(year) %>%
+  mutate(stack_index = row_number()) %>%
+  ungroup()
+
+# Generate Public/Municipal Timeline
+ggplot(muni_plot_data, aes(x = year, y = stack_index, label = State)) +
+  # Draw a clean baseline
+  geom_hline(yintercept = 0, color = "gray50", size = 0.5) +
+  # Replace dots/digits with actual state abbreviations
+  geom_text(color = "#D49A73", fontface = "bold", size = 4.5) +
+  # Force x-axis to show clear integer years
+  scale_x_continuous(breaks = seq(min(muni_plot_data$year), max(muni_plot_data$year), by = 1)) +
+  # Pad the vertical axis slightly so text doesn't cut off
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2))) +
+  labs(
+    title = "Public/Municipal Green Bond Issuance Timeline by State",
+    x = "Year of Initial Issuance",
+    y = ""
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    panel.grid.major.y = element_blank(), 
+    panel.grid.minor.y = element_blank(),
+    axis.text.y = element_blank(),       
+    axis.ticks.y = element_blank()
+  )
+
+ggsave(
+  filename = "municipal_issuance_timeline.png",
+  width = 10,
+  height = 5,
+  dpi = 300
+)
+
+```
+
+```
+

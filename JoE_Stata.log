@@ -3,12 +3,12 @@
        log:  C:\Users\njl119\OneDrive - Case Western Reserve University\Desktop\JoE_S
 > tata.log
   log type:  text
- opened on:   1 Jul 2026, 12:49:39
+ opened on:   1 Jul 2026, 13:07:05
 
 . 
 end of do-file
 
-. do "C:\Users\LOCAL_~1\Temp\STD254c_000001.tmp"
+. do "C:\Users\LOCAL_~1\Temp\STD4208_00000e.tmp"
 
 . import delimited "panel.csv", clear
 (encoding automatically selected: ISO-8859-1)
@@ -17,7 +17,7 @@ end of do-file
 . 
 end of do-file
 
-. do "C:\Users\LOCAL_~1\Temp\STD254c_000002.tmp"
+. do "C:\Users\LOCAL_~1\Temp\STD4208_00000f.tmp"
 
 . *** Begin Stata Coding Here
 . summarize
@@ -67,6 +67,10 @@ Sorted by:
      Note: Dataset has changed since last saved.
 
 . 
+end of do-file
+
+. do "C:\Users\LOCAL_~1\Temp\STD4208_00000g.tmp"
+
 . *** Initialize the panel data structure
 . encode state, gen(state_id)
 
@@ -77,13 +81,19 @@ Panel variable: state_id (strongly balanced)
          Delta: 1 unit
 
 . 
+. *** Convert to raw Watts per capita so the numbers are larger than 1
+. gen watts_wind_pc = wind_capacity_per_capita * 1000000
+
+. gen watts_solar_pc = solar_capacity_per_capita * 1000000
+
+. 
 . *** Natural log our wind capacity per capita, solar capacity per capita, and GDP pe
 > r capita variables
 . *** To avoid generating missing values with ln(0), add 1 to the capacity (ln(x + 1)
 > )
-. gen ln_wind_capacity = ln(wind_capacity_per_capita + 1)
+. gen ln_wind_capacity = ln(watts_wind_pc + 1)
 
-. gen ln_solar_capacity = ln(solar_capacity_per_capita + 1)
+. gen ln_solar_capacity = ln(watts_solar_pc + 1)
 
 . 
 . *** GDP per capita is always > 0
@@ -104,7 +114,78 @@ Panel variable: state_id (strongly balanced)
 . 
 end of do-file
 
-. do "C:\Users\LOCAL_~1\Temp\STD254c_000003.tmp"
+. do "C:\Users\LOCAL_~1\Temp\STD4208_00000h.tmp"
+
+. summarize
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+       state |          0
+        year |        720        2017    4.323497       2010       2024
+wind_capac~y |        720      1951.1    4193.008          0    42282.9
+solar_capa~y |        720     768.131    2300.769          0    22562.9
+  population |        720     6715555     7276102     564402   3.95e+07
+-------------+---------------------------------------------------------
+    real_gdp |        720    4.03e+11    4.98e+11   3.09e+10   3.31e+12
+is_corporate |        720    .3041667    .4603734          0          1
+   is_public |        720    .3569444    .4794313          0          1
+          gb |        720    .4513889    .4979773          0          1
+      is_rps |        720    .6680556    .4712385          0          1
+-------------+---------------------------------------------------------
+real_gdp_p~a |        720    56966.01    11013.67   35760.45   92617.73
+wind_capac~a |        720    .0005212    .0009708          0   .0063426
+solar_capa~a |        720    .0000899    .0001675          0   .0016175
+    state_id |        720        24.5    13.86303          1         48
+watts_wind~c |        720    521.2343    970.7586          0   6342.556
+-------------+---------------------------------------------------------
+watts_sola~c |        720    89.93264    167.5145          0   1617.491
+ln_wind_ca~y |        720    4.116684    2.739765          0   8.755195
+ln_solar_c~y |        720     2.68362    2.205541          0    7.38925
+ln_gdp_per~a |        720    10.93205    .1899724    10.4846   11.43624
+rps_x_corp~e |        720    .2027778    .4023478          0          1
+-------------+---------------------------------------------------------
+rps_x_public |        720          .3    .4585761          0          1
+ rps_x_anyGB |        720    .3319444    .4712385          0          1
+
+. describe
+
+Contains data
+ Observations:           720                  
+    Variables:            22                  
+-------------------------------------------------------------------------------------
+Variable      Storage   Display    Value
+    name         type    format    label      Variable label
+-------------------------------------------------------------------------------------
+state           str2    %9s                   State
+year            int     %8.0g                 
+wind_capacity   float   %9.0g                 
+solar_capacity  float   %9.0g                 
+population      long    %12.0g                Population
+real_gdp        double  %10.0g                
+is_corporate    byte    %8.0g                 
+is_public       byte    %8.0g                 
+gb              byte    %8.0g                 
+is_rps          byte    %8.0g                 
+real_gdp_per_~a float   %9.0g                 
+wind_capacity~a float   %9.0g                 
+solar_capacit~a float   %9.0g                 
+state_id        long    %8.0g      state_id   State
+watts_wind_pc   float   %9.0g                 
+watts_solar_pc  float   %9.0g                 
+ln_wind_capac~y float   %9.0g                 
+ln_solar_capa~y float   %9.0g                 
+ln_gdp_per_ca~a float   %9.0g                 
+rps_x_corporate float   %9.0g                 
+rps_x_public    float   %9.0g                 
+rps_x_anyGB     float   %9.0g                 
+-------------------------------------------------------------------------------------
+Sorted by: state_id  year
+     Note: Dataset has changed since last saved.
+
+. 
+end of do-file
+
+. do "C:\Users\LOCAL_~1\Temp\STD4208_00000i.tmp"
 
 . save "JoE_Stata_1.dta", replace
 file JoE_Stata_1.dta saved

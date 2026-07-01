@@ -503,3 +503,30 @@ ggplot(solar_geo_data, aes(x = long, y = lat, group = group, fill = capacity)) +
 
 ```
 
+```{r}
+# Clean BEA State GDP Data
+
+library(readr)
+library(dplyr)
+
+
+df <- read_csv("SAGDP1__ALL_AREAS_1997_2025.csv")
+
+# filter
+non_states <- c("United States", "New England", "Mideast", "Great Lakes",
+                "Plains", "Southeast", "Southwest", "Rocky Mountain", "Far West")
+
+years <- as.character(2010:2024)
+
+Real_GDP <- df |>
+  filter(
+    trimws(Description) == "Real GDP (millions of chained 2017 dollars) 1/",
+    !is.na(GeoName),
+    !GeoName %in% non_states
+  ) |>
+  select(State = GeoName, all_of(years))
+```
+
+
+
+

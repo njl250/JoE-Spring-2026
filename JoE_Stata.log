@@ -1,0 +1,48 @@
+-------------------------------------------------------------------------------------
+      name:  <unnamed>
+       log:  C:\Users\njl119\OneDrive - Case Western Reserve University\Desktop\JoE_S
+> tata.log
+  log type:  text
+ opened on:  29 Jun 2026, 17:20:20
+
+. 
+end of do-file
+
+. do "C:\Users\LOCAL_~1\Temp\STD31b4_000005.tmp"
+
+. import delimited "panel.csv", clear
+(encoding automatically selected: ISO-8859-1)
+(8 vars, 720 obs)
+
+. 
+end of do-file
+
+. do "C:\Users\LOCAL_~1\Temp\STD31b4_000006.tmp"
+
+. *** Begin Stata Coding Here
+. summarize
+
+    Variable |        Obs        Mean    Std. dev.       Min        Max
+-------------+---------------------------------------------------------
+       state |          0
+        year |        720        2017    4.323497       2010       2024
+wind_capac~y |        720      1951.1    4193.008          0    42282.9
+solar_capa~y |        720     768.131    2300.769          0    22562.9
+is_corporate |        720       .3125    .4638346          0          1
+-------------+---------------------------------------------------------
+   is_public |        720    .3486111    .4768619          0          1
+          gb |        720    .4513889    .4979773          0          1
+      is_rps |        720    .6680556    .4712385          0          1
+
+. 
+end of do-file
+
+. do "C:\Users\LOCAL_~1\Temp\STD31b4_000007.tmp"
+
+. save "JoE_Stata.dta", replace
+file JoE_Stata.dta saved
+
+. 
+end of do-file
+
+. exit, clear

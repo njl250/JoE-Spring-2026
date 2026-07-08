@@ -62,66 +62,335 @@ csdid ln_solar_capacity ln_gdp_per_capita, ivar(state_id) time(year) gvar(first_
 estat event
 csdid_plot, title("Any GB on ln(Solar) [Baseline]") name(plot1_base, replace)
 graph export "plot1_solar_any_base.png", replace
+
+*--- 1. Post the event coefficients to active memory first ---
 estat event, post
-capture test Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
-local p_val = r(p)
-lincom Post_avg
-post `memhold' ("Any GB") ("Solar") ("Baseline") (`p_val') (r(estimate)) (r(se))
+
+*=====================================================================*
+*--- SENSITIVITY DIAGNOSTIC LOOP & GRAPH (EXE 1 UNIQUE NAMES)        *
+*=====================================================================*
+tempname loop_hold1
+tempfile trend_results1
+postfile `loop_hold1' horizon p_value using "`trend_results1'", replace
+
+forvalues h = 12(-1)2 {
+    local varlist ""
+    forvalues i = `h'(-1)1 {
+        local varlist "`varlist' Tm`i'"
+    }
+    capture quietly test `varlist'
+    if !_rc {
+        post `loop_hold1' (`h') (r(p))
+    }
+}
+postclose `loop_hold1'
+
+preserve
+    use "`trend_results1'", clear
+    gen alpha = 0.05
+    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
+           (line alpha horizon, lpattern(dash) lcolor(red)), ///
+           title("Pre-Trend Sensitivity Analysis: Any GB Solar") ///
+           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
+           ytitle("Joint Wald Test p-value") ///
+           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
+           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
+           graphregion(color(white)) ///
+           name(plot1_sensitivity, replace)
+    graph export "plot1_pretrend_sensitivity.png", replace
+restore
+*=====================================================================*
+
+*--- 2. Joint Test using the latest available maximum coefficients (Periods -9 to -1) ---
+capture test Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
+if !_rc {
+    local clean_joint_p = r(p)
+}
+else {
+    local clean_joint_p = .
+}
+display as result "TRUE Joint Pre-Trend p-value (Periods -9 to -1): " `clean_joint_p'
+
+*--- 3. Send everything to your summary table ---
+post `memhold' ("Any GB") ("Solar") ("Baseline") (`clean_joint_p') (_b[Post_avg]) (_se[Post_avg])
+
 
 *** Execution 2A: Corporate GB on ln(Solar) [Baseline]
 csdid ln_solar_capacity ln_gdp_per_capita, ivar(state_id) time(year) gvar(first_corp_year) method(dripw)
 estat event
 csdid_plot, title("Corporate GB on ln(Solar) [Baseline]") name(plot2a_base, replace)
 graph export "plot2_solar_corp_base.png", replace
+
+*--- 1. Post the event coefficients to active memory first ---
 estat event, post
-capture test Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
-local p_val = r(p)
-lincom Post_avg
-post `memhold' ("Corporate GB") ("Solar") ("Baseline") (`p_val') (r(estimate)) (r(se))
+
+*=====================================================================*
+*--- SENSITIVITY DIAGNOSTIC LOOP & GRAPH (EXE 2A UNIQUE NAMES)       *
+*=====================================================================*
+tempname loop_hold2a
+tempfile trend_results2a
+postfile `loop_hold2a' horizon p_value using "`trend_results2a'", replace
+
+forvalues h = 12(-1)2 {
+    local varlist ""
+    forvalues i = `h'(-1)1 {
+        local varlist "`varlist' Tm`i'"
+    }
+    capture quietly test `varlist'
+    if !_rc {
+        post `loop_hold2a' (`h') (r(p))
+    }
+}
+postclose `loop_hold2a'
+
+preserve
+    use "`trend_results2a'", clear
+    gen alpha = 0.05
+    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
+           (line alpha horizon, lpattern(dash) lcolor(red)), ///
+           title("Pre-Trend Sensitivity Analysis: Corporate GB Solar") ///
+           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
+           ytitle("Joint Wald Test p-value") ///
+           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
+           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
+           graphregion(color(white)) ///
+           name(plot2a_sensitivity, replace)
+    graph export "plot2a_pretrend_sensitivity.png", replace
+restore
+*=====================================================================*
+
+*--- 2. Now run your chosen TRUE Joint Test (e.g., periods -12 to -1) ---
+capture test Tm12 Tm11 Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
+if !_rc {
+    local clean_joint_p = r(p)
+}
+else {
+    local clean_joint_p = .
+}
+display as result "TRUE Joint Pre-Trend p-value (Periods -12 to -1): " `clean_joint_p'
+
+*--- 3. Send everything to your summary table ---
+post `memhold' ("Corporate GB") ("Solar") ("Baseline") (`clean_joint_p') (_b[Post_avg]) (_se[Post_avg])
+
 
 *** Execution 2B: Public GB on ln(Solar) [Baseline]
 csdid ln_solar_capacity ln_gdp_per_capita, ivar(state_id) time(year) gvar(first_muni_year) method(dripw)
 estat event
 csdid_plot, title("Public GB on ln(Solar) [Baseline]") name(plot2b_base, replace)
 graph export "plot2_solar_muni_base.png", replace
+
+*--- 1. Post the event coefficients to active memory first ---
 estat event, post
-capture test Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
-local p_val = r(p)
-lincom Post_avg
-post `memhold' ("Public GB") ("Solar") ("Baseline") (`p_val') (r(estimate)) (r(se))
+
+*=====================================================================*
+*--- SENSITIVITY DIAGNOSTIC LOOP & GRAPH (EXE 2B UNIQUE NAMES)       *
+*=====================================================================*
+tempname loop_hold2b
+tempfile trend_results2b
+postfile `loop_hold2b' horizon p_value using "`trend_results2b'", replace
+
+forvalues h = 12(-1)2 {
+    local varlist ""
+    forvalues i = `h'(-1)1 {
+        local varlist "`varlist' Tm`i'"
+    }
+    capture quietly test `varlist'
+    if !_rc {
+        post `loop_hold2b' (`h') (r(p))
+    }
+}
+postclose `loop_hold2b'
+
+preserve
+    use "`trend_results2b'", clear
+    gen alpha = 0.05
+    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
+           (line alpha horizon, lpattern(dash) lcolor(red)), ///
+           title("Pre-Trend Sensitivity Analysis: Public GB Solar") ///
+           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
+           ytitle("Joint Wald Test p-value") ///
+           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
+           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
+           graphregion(color(white)) ///
+           name(plot2b_sensitivity, replace)
+    graph export "plot2b_pretrend_sensitivity.png", replace
+restore
+*=====================================================================*
+
+*--- 2. Now run your chosen TRUE Joint Test (e.g., periods -12 to -1) ---
+capture test Tm12 Tm11 Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
+if !_rc {
+    local clean_joint_p = r(p)
+}
+else {
+    local clean_joint_p = .
+}
+display as result "TRUE Joint Pre-Trend p-value (Periods -12 to -1): " `clean_joint_p'
+
+*--- 3. Send everything to your summary table ---
+post `memhold' ("Public GB") ("Solar") ("Baseline") (`clean_joint_p') (_b[Post_avg]) (_se[Post_avg])
 
 *** Execution 3: Any GB on ln(Wind) [Baseline]
 csdid ln_wind_capacity ln_gdp_per_capita, ivar(state_id) time(year) gvar(first_gb_year) method(dripw)
 estat event
 csdid_plot, title("Any GB on ln(Wind) [Baseline]") name(plot3_base, replace)
 graph export "plot3_wind_any_base.png", replace
+
+*--- 1. Post the event coefficients to active memory first ---
 estat event, post
+
+*=====================================================================*
+*--- SENSITIVITY DIAGNOSTIC LOOP & GRAPH (EXE 3 UNIQUE NAMES)        *
+*=====================================================================*
+tempname loop_hold3
+tempfile trend_results3
+postfile `loop_hold3' horizon p_value using "`trend_results3'", replace
+
+* Loop through horizons; capture ensures missing years (-12, -11) don't crash the script
+forvalues h = 12(-1)2 {
+    local varlist ""
+    forvalues i = `h'(-1)1 {
+        local varlist "`varlist' Tm`i'"
+    }
+    capture quietly test `varlist'
+    if !_rc {
+        post `loop_hold3' (`h') (r(p))
+    }
+}
+postclose `loop_hold3'
+
+preserve
+    use "`trend_results3'", clear
+    gen alpha = 0.05
+    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
+           (line alpha horizon, lpattern(dash) lcolor(red)), ///
+           title("Pre-Trend Sensitivity Analysis: Any GB Wind") ///
+           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
+           ytitle("Joint Wald Test p-value") ///
+           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
+           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
+           graphregion(color(white)) ///
+           name(plot3_sensitivity, replace)
+    graph export "plot3_pretrend_sensitivity.png", replace
+restore
+*=====================================================================*
+
+*--- 2. Joint Test using the maximum available coefficients for Wind (Periods -10 to -1) ---
 capture test Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
-local p_val = r(p)
-lincom Post_avg
-post `memhold' ("Any GB") ("Wind") ("Baseline") (`p_val') (r(estimate)) (r(se))
+if !_rc {
+    local clean_joint_p = r(p)
+}
+else {
+    local clean_joint_p = .
+}
+display as result "TRUE Joint Pre-Trend p-value (Periods -10 to -1): " `clean_joint_p'
+
+*--- 3. Send everything cleanly to your summary table ---
+post `memhold' ("Any GB") ("Wind") ("Baseline") (`clean_joint_p') (_b[Post_avg]) (_se[Post_avg])
 
 *** Execution 4A: Corporate GB on ln(Wind) [Baseline]
 csdid ln_wind_capacity ln_gdp_per_capita, ivar(state_id) time(year) gvar(first_corp_year) method(dripw)
 estat event
 csdid_plot, title("Corporate GB on ln(Wind) [Baseline]") name(plot4a_base, replace)
 graph export "plot4_wind_corp_base.png", replace
-estat event, post
-capture test Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
+
+*--- FIX 1: Run estat pretrend to calculate and extract the global 12-year p-value ---
+estat pretrend
 local p_val = r(p)
-lincom Post_avg
-post `memhold' ("Corporate GB") ("Wind") ("Baseline") (`p_val') (r(estimate)) (r(se))
+
+*--- Post the event coefficients to active memory for the loop ---
+estat event, post
+
+*=====================================================================*
+*--- FIX 2: SENSITIVITY DIAGNOSTIC LOOP & GRAPH (EXTENDED TO -12)     *
+*=====================================================================*
+tempname loop_hold4a
+tempfile trend_results4a
+postfile `loop_hold4a' horizon p_value using "`trend_results4a'", replace
+
+* Systematically test windows from (-12 to -1) down to (-2 to -1)
+forvalues h = 12(-1)2 {
+    local varlist ""
+    forvalues i = `h'(-1)1 {
+        local varlist "`varlist' Tm`i'"
+    }
+    capture quietly test `varlist'
+    if !_rc {
+        post `loop_hold4a' (`h') (r(p))
+    }
+}
+postclose `loop_hold4a'
+
+preserve
+    use "`trend_results4a'", clear
+    gen alpha = 0.05
+    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
+           (line alpha horizon, lpattern(dash) lcolor(red)), ///
+           title("Pre-Trend Sensitivity Analysis: Corporate GB Wind") ///
+           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
+           ytitle("Joint Wald Test p-value") ///
+           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
+           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
+           graphregion(color(white)) ///
+           name(plot4a_sensitivity, replace)
+    graph export "plot4a_pretrend_sensitivity.png", replace
+restore
+*=====================================================================*
+
+*--- 3. Send everything cleanly to your summary table ---
+post `memhold' ("Corporate GB") ("Wind") ("Baseline") (`p_val') (_b[Post_avg]) (_se[Post_avg])
 
 *** Execution 4B: Public GB on ln(Wind) [Baseline]
 csdid ln_wind_capacity ln_gdp_per_capita, ivar(state_id) time(year) gvar(first_muni_year) method(dripw)
 estat event
 csdid_plot, title("Public GB on ln(Wind) [Baseline]") name(plot4b_base, replace)
 graph export "plot4_wind_muni_base.png", replace
-estat event, post
-capture test Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
+
+*--- FIX 1: Run estat pretrend to calculate and extract the global 12-year p-value ---
+estat pretrend
 local p_val = r(p)
-lincom Post_avg
-post `memhold' ("Public GB") ("Wind") ("Baseline") (`p_val') (r(estimate)) (r(se))
+
+*--- Post the event coefficients to active memory for the loop ---
+estat event, post
+
+*=====================================================================*
+*--- FIX 2: SENSITIVITY DIAGNOSTIC LOOP & GRAPH (EXTENDED TO -12)     *
+*=====================================================================*
+tempname loop_hold4b
+tempfile trend_results4b
+postfile `loop_hold4b' horizon p_value using "`trend_results4b'", replace
+
+* Systematically test windows from (-12 to -1) down to (-2 to -1)
+forvalues h = 12(-1)2 {
+    local varlist ""
+    forvalues i = `h'(-1)1 {
+        local varlist "`varlist' Tm`i'"
+    }
+    capture quietly test `varlist'
+    if !_rc {
+        post `loop_hold4b' (`h') (r(p))
+    }
+}
+postclose `loop_hold4b'
+
+preserve
+    use "`trend_results4b'", clear
+    gen alpha = 0.05
+    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
+           (line alpha horizon, lpattern(dash) lcolor(red)), ///
+           title("Pre-Trend Sensitivity Analysis: Public GB Wind") ///
+           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
+           ytitle("Joint Wald Test p-value") ///
+           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
+           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
+           graphregion(color(white)) ///
+           name(plot4b_sensitivity, replace)
+    graph export "plot4b_pretrend_sensitivity.png", replace
+restore
+*=====================================================================*
+
+*--- 3. Send everything cleanly to your summary table ---
+post `memhold' ("Public GB") ("Wind") ("Baseline") (`p_val') (_b[Post_avg]) (_se[Post_avg])
 
 
 * ==============================================================================
@@ -133,66 +402,324 @@ csdid ln_solar_capacity ln_gdp_per_capita is_rps, ivar(state_id) time(year) gvar
 estat event
 csdid_plot, title("Any GB on ln(Solar) [RPS Control]") name(plot1_rps, replace)
 graph export "plot1_solar_any_rps.png", replace
+
+*--- 1. Post the event coefficients to active memory first ---
 estat event, post
-capture test Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
-local p_val = r(p)
-lincom Post_avg
-post `memhold' ("Any GB") ("Solar") ("RPS Control") (`p_val') (r(estimate)) (r(se))
+
+*=====================================================================*
+*--- SENSITIVITY DIAGNOSTIC LOOP & GRAPH                             *
+*=====================================================================*
+tempname loop_hold1_rps
+tempfile trend_results1_rps
+postfile `loop_hold1_rps' horizon p_value using "`trend_results1_rps'", replace
+
+* Loop up to 12; capture safely skips the missing -12 to -10 years for the graph
+forvalues h = 12(-1)2 {
+    local varlist ""
+    forvalues i = `h'(-1)1 {
+        local varlist "`varlist' Tm`i'"
+    }
+    capture quietly test `varlist'
+    if !_rc {
+        post `loop_hold1_rps' (`h') (r(p))
+    }
+}
+postclose `loop_hold1_rps'
+
+preserve
+    use "`trend_results1_rps'", clear
+    gen alpha = 0.05
+    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
+           (line alpha horizon, lpattern(dash) lcolor(red)), ///
+           title("Pre-Trend Sensitivity Analysis: Any GB Solar [RPS]") ///
+           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
+           ytitle("Joint Wald Test p-value") ///
+           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
+           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
+           graphregion(color(white)) ///
+           name(plot1_rps_sensitivity, replace)
+    graph export "plot1_rps_pretrend_sensitivity.png", replace
+restore
+*=====================================================================*
+
+*--- 2. FIX: Manually run the true maximum 9-year joint test for your table ---
+capture test Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
+if !_rc {
+    local clean_joint_p = r(p)
+}
+else {
+    local clean_joint_p = .
+}
+display as result "Isolated Joint Pre-Trend p-value (Periods -9 to -1): " `clean_joint_p'
+
+*--- 3. Send the clean 9-year p-value directly to your summary table ---
+post `memhold' ("Any GB") ("Solar") ("RPS Control") (`clean_joint_p') (_b[Post_avg]) (_se[Post_avg])
 
 *** Execution 2A: Corporate GB on ln(Solar) [RPS Control]
 csdid ln_solar_capacity ln_gdp_per_capita is_rps, ivar(state_id) time(year) gvar(first_corp_year) method(dripw)
 estat event
 csdid_plot, title("Corporate GB on ln(Solar) [RPS Control]") name(plot2a_rps, replace)
 graph export "plot2_solar_corp_rps.png", replace
-estat event, post
-capture test Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
+
+*--- FIX 1: Run estat pretrend to extract the total global model p-value for all 12 years ---
+estat pretrend
 local p_val = r(p)
-lincom Post_avg
-post `memhold' ("Corporate GB") ("Solar") ("RPS Control") (`p_val') (r(estimate)) (r(se))
+
+*--- Post the event coefficients to active memory for the loop ---
+estat event, post
+
+*=====================================================================*
+*--- FIX 2: SENSITIVITY DIAGNOSTIC LOOP & GRAPH                      *
+*=====================================================================*
+tempname loop_hold2a_rps
+tempfile trend_results2a_rps
+postfile `loop_hold2a_rps' horizon p_value using "`trend_results2a_rps'", replace
+
+* Systematically test windows from (-12 to -1) down to (-2 to -1)
+forvalues h = 12(-1)2 {
+    local varlist ""
+    forvalues i = `h'(-1)1 {
+        local varlist "`varlist' Tm`i'"
+    }
+    capture quietly test `varlist'
+    if !_rc {
+        post `loop_hold2a_rps' (`h') (r(p))
+    }
+}
+postclose `loop_hold2a_rps'
+
+preserve
+    use "`trend_results2a_rps'", clear
+    gen alpha = 0.05
+    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
+           (line alpha horizon, lpattern(dash) lcolor(red)), ///
+           title("Pre-Trend Sensitivity Analysis: Corporate GB Solar [RPS]") ///
+           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
+           ytitle("Joint Wald Test p-value") ///
+           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
+           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
+           graphregion(color(white)) ///
+           name(plot2a_rps_sensitivity, replace)
+    graph export "plot2a_rps_pretrend_sensitivity.png", replace
+restore
+*=====================================================================*
+
+*--- 3. Send the complete 12-year p-value directly to your summary table ---
+post `memhold' ("Corporate GB") ("Solar") ("RPS Control") (`p_val') (_b[Post_avg]) (_se[Post_avg])
 
 *** Execution 2B: Public GB on ln(Solar) [RPS Control]
 csdid ln_solar_capacity ln_gdp_per_capita is_rps, ivar(state_id) time(year) gvar(first_muni_year) method(dripw)
 estat event
 csdid_plot, title("Public GB on ln(Solar) [RPS Control]") name(plot2b_rps, replace)
 graph export "plot2_solar_muni_rps.png", replace
-estat event, post
-capture test Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
+
+*--- FIX 1: Run estat pretrend to extract the total global model p-value for all 12 years ---
+estat pretrend
 local p_val = r(p)
-lincom Post_avg
-post `memhold' ("Public GB") ("Solar") ("RPS Control") (`p_val') (r(estimate)) (r(se))
+
+*--- Post the event coefficients to active memory for the loop ---
+estat event, post
+
+*=====================================================================*
+*--- FIX 2: SENSITIVITY DIAGNOSTIC LOOP & GRAPH                      *
+*=====================================================================*
+tempname loop_hold2b_rps
+tempfile trend_results2b_rps
+postfile `loop_hold2b_rps' horizon p_value using "`trend_results2b_rps'", replace
+
+* Systematically test windows from (-12 to -1) down to (-2 to -1)
+forvalues h = 12(-1)2 {
+    local varlist ""
+    forvalues i = `h'(-1)1 {
+        local varlist "`varlist' Tm`i'"
+    }
+    capture quietly test `varlist'
+    if !_rc {
+        post `loop_hold2b_rps' (`h') (r(p))
+    }
+}
+postclose `loop_hold2b_rps'
+
+preserve
+    use "`trend_results2b_rps'", clear
+    gen alpha = 0.05
+    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
+           (line alpha horizon, lpattern(dash) lcolor(red)), ///
+           title("Pre-Trend Sensitivity Analysis: Public GB Solar [RPS]") ///
+           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
+           ytitle("Joint Wald Test p-value") ///
+           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
+           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
+           graphregion(color(white)) ///
+           name(plot2b_rps_sensitivity, replace)
+    graph export "plot2b_rps_pretrend_sensitivity.png", replace
+restore
+*=====================================================================*
+
+*--- 3. Send the complete 12-year p-value directly to your summary table ---
+post `memhold' ("Public GB") ("Solar") ("RPS Control") (`p_val') (_b[Post_avg]) (_se[Post_avg])
 
 *** Execution 3: Any GB on ln(Wind) [RPS Control]
 csdid ln_wind_capacity ln_gdp_per_capita is_rps, ivar(state_id) time(year) gvar(first_gb_year) method(dripw)
 estat event
 csdid_plot, title("Any GB on ln(Wind) [RPS Control]") name(plot3_rps, replace)
 graph export "plot3_wind_any_rps.png", replace
+
+*--- 1. Post the event coefficients to active memory first ---
 estat event, post
+
+*=====================================================================*
+*--- SENSITIVITY DIAGNOSTIC LOOP & GRAPH (EXE 3 RPS UNIQUE)          *
+*=====================================================================*
+tempname loop_hold3_rps
+tempfile trend_results3_rps
+postfile `loop_hold3_rps' horizon p_value using "`trend_results3_rps'", replace
+
+* Loop up to 12; capture safely skips missing -12 and -11 years for the graph
+forvalues h = 12(-1)2 {
+    local varlist ""
+    forvalues i = `h'(-1)1 {
+        local varlist "`varlist' Tm`i'"
+    }
+    capture quietly test `varlist'
+    if !_rc {
+        post `loop_hold3_rps' (`h') (r(p))
+    }
+}
+postclose `loop_hold3_rps'
+
+preserve
+    use "`trend_results3_rps'", clear
+    gen alpha = 0.05
+    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
+           (line alpha horizon, lpattern(dash) lcolor(red)), ///
+           title("Pre-Trend Sensitivity Analysis: Any GB Wind [RPS]") ///
+           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
+           ytitle("Joint Wald Test p-value") ///
+           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
+           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
+           graphregion(color(white)) ///
+           name(plot3_rps_sensitivity, replace)
+    graph export "plot3_rps_pretrend_sensitivity.png", replace
+restore
+*=====================================================================*
+
+*--- 2. FIX: Manually run the true maximum 10-year joint test for your table ---
 capture test Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
-local p_val = r(p)
-lincom Post_avg
-post `memhold' ("Any GB") ("Wind") ("RPS Control") (`p_val') (r(estimate)) (r(se))
+if !_rc {
+    local clean_joint_p = r(p)
+}
+else {
+    local clean_joint_p = .
+}
+display as result "Isolated Joint Pre-Trend p-value (Periods -10 to -1): " `clean_joint_p'
+
+*--- 3. Send the clean 10-year p-value directly to your summary table ---
+post `memhold' ("Any GB") ("Wind") ("RPS Control") (`clean_joint_p') (_b[Post_avg]) (_se[Post_avg])
 
 *** Execution 4A: Corporate GB on ln(Wind) [RPS Control]
 csdid ln_wind_capacity ln_gdp_per_capita is_rps, ivar(state_id) time(year) gvar(first_corp_year) method(dripw)
 estat event
 csdid_plot, title("Corporate GB on ln(Wind) [RPS Control]") name(plot4a_rps, replace)
 graph export "plot4_wind_corp_rps.png", replace
-estat event, post
-capture test Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
+
+*--- FIX 1: Run estat pretrend to extract the total global model p-value for all 12 years ---
+estat pretrend
 local p_val = r(p)
-lincom Post_avg
-post `memhold' ("Corporate GB") ("Wind") ("RPS Control") (`p_val') (r(estimate)) (r(se))
+
+*--- Post the event coefficients to active memory for the loop ---
+estat event, post
+
+*=====================================================================*
+*--- FIX 2: SENSITIVITY DIAGNOSTIC LOOP & GRAPH                      *
+*=====================================================================*
+tempname loop_hold4a_rps
+tempfile trend_results4a_rps
+postfile `loop_hold4a_rps' horizon p_value using "`trend_results4a_rps'", replace
+
+* Systematically test windows from (-12 to -1) down to (-2 to -1)
+forvalues h = 12(-1)2 {
+    local varlist ""
+    forvalues i = `h'(-1)1 {
+        local varlist "`varlist' Tm`i'"
+    }
+    capture quietly test `varlist'
+    if !_rc {
+        post `loop_hold4a_rps' (`h') (r(p))
+    }
+}
+postclose `loop_hold4a_rps'
+
+preserve
+    use "`trend_results4a_rps'", clear
+    gen alpha = 0.05
+    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
+           (line alpha horizon, lpattern(dash) lcolor(red)), ///
+           title("Pre-Trend Sensitivity Analysis: Corporate GB Wind [RPS]") ///
+           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
+           ytitle("Joint Wald Test p-value") ///
+           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
+           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
+           graphregion(color(white)) ///
+           name(plot4a_rps_sensitivity, replace)
+    graph export "plot4a_rps_pretrend_sensitivity.png", replace
+restore
+*=====================================================================*
+
+*--- 3. Send the complete 12-year p-value directly to your summary table ---
+post `memhold' ("Corporate GB") ("Wind") ("RPS Control") (`p_val') (_b[Post_avg]) (_se[Post_avg])
 
 *** Execution 4B: Public GB on ln(Wind) [RPS Control]
 csdid ln_wind_capacity ln_gdp_per_capita is_rps, ivar(state_id) time(year) gvar(first_muni_year) method(dripw)
 estat event
 csdid_plot, title("Public GB on ln(Wind) [RPS Control]") name(plot4b_rps, replace)
 graph export "plot4_wind_muni_rps.png", replace
-estat event, post
-capture test Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
+
+*--- FIX 1: Run estat pretrend to extract the total global model p-value for all 12 years ---
+estat pretrend
 local p_val = r(p)
-lincom Post_avg
-post `memhold' ("Public GB") ("Wind") ("RPS Control") (`p_val') (r(estimate)) (r(se))
+
+*--- Post the event coefficients to active memory for the loop ---
+estat event, post
+
+*=====================================================================*
+*--- FIX 2: SENSITIVITY DIAGNOSTIC LOOP & GRAPH                      *
+*=====================================================================*
+tempname loop_hold4b_rps
+tempfile trend_results4b_rps
+postfile `loop_hold4b_rps' horizon p_value using "`trend_results4b_rps'", replace
+
+* Systematically test windows from (-12 to -1) down to (-2 to -1)
+forvalues h = 12(-1)2 {
+    local varlist ""
+    forvalues i = `h'(-1)1 {
+        local varlist "`varlist' Tm`i'"
+    }
+    capture quietly test `varlist'
+    if !_rc {
+        post `loop_hold4b_rps' (`h') (r(p))
+    }
+}
+postclose `loop_hold4b_rps'
+
+preserve
+    use "`trend_results4b_rps'", clear
+    gen alpha = 0.05
+    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
+           (line alpha horizon, lpattern(dash) lcolor(red)), ///
+           title("Pre-Trend Sensitivity Analysis: Public GB Wind [RPS]") ///
+           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
+           ytitle("Joint Wald Test p-value") ///
+           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
+           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
+           graphregion(color(white)) ///
+           name(plot4b_rps_sensitivity, replace)
+    graph export "plot4b_rps_pretrend_sensitivity.png", replace
+restore
+*=====================================================================*
+
+*--- 3. Send the complete 12-year p-value directly to your summary table ---
+post `memhold' ("Public GB") ("Wind") ("RPS Control") (`p_val') (_b[Post_avg]) (_se[Post_avg])
 
 * Close the collection file
 postclose `memhold'

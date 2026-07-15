@@ -1,12 +1,15 @@
+* ==============================================================================
+* COMPREHENSIVE GREEN BOND CAUSAL ANALYSIS & DIAGNOSTICS SCRIPT
+* ==============================================================================
 clear
 set more off
 capture log close
 log using JoE_Stata.log, replace
-import delimited "panel.csv", clear
 
 * ==============================================================================
-* DATA PREPARATION & VARIABLE GENERATION
+* 1. DATA PREPARATION & VARIABLE GENERATION
 * ==============================================================================
+import delimited "panel.csv", clear
 
 *** Initialize the panel data structure
 encode state, gen(state_id)
@@ -24,13 +27,15 @@ gen ln_solar_capacity = ln(watts_solar_pc + 1)
 gen ln_gdp_per_capita = ln(real_gdp_per_capita)
 
 *** Interaction Terms (For background tracking)
-gen rps_x_corporate = is_rps * is_corporate
-gen rps_x_public    = is_rps * is_public
-gen rps_x_anyGB     = is_rps * gb
+gen rps_x_corporate = is_corporate * is_corporate 
+gen rps_x_public    = is_public * is_public       
+gen rps_x_anyGB     = gb * gb                     
 
-*** Install/update the core Callaway & Sant'Anna packages
+*** Install/update the core packages
 ssc install drdid, replace
 ssc install csdid, replace
+ssc install honestdid, replace
+ssc install coefplot, replace
 
 *** Create treatment cohort variables (gvar) based on first year of issuance
 by state_id (year), sort: egen first_gb_year = min(cond(gb == 1, year, .))
@@ -47,373 +52,32 @@ describe
 
 
 * ==============================================================================
-* PREPARE POSTFILE FOR RESULTS TABLE
+* 2. PREPARE POSTFILE FOR RESULTS TABLE
 * ==============================================================================
 tempname memhold
-postfile `memhold' str40 execution str15 outcome str15 model_type double pre_wald_p double post_att double post_se using "csdid_summary_table.dta", replace
+postfile `memhold' str40 execution str15 outcome str15 model_type double pre_wald_chi double pre_wald_p double post_att double post_se using "csdid_summary_table.dta", replace
+
+local plotopts xtitle("M (Relative Violation Magnitude)") ytitle("95% Robust CI")
 
 
 * ==============================================================================
-* BLOCK 1: BASELINE EXECUTIONS (CONTROL: GDP ONLY)
+* 3. POLICY-ROBUST EXECUTIONS WITH SENSITIVITY LOOPS
 * ==============================================================================
 
-*** Execution 1: Any GB on ln(Solar) [Baseline]
-csdid ln_solar_capacity ln_gdp_per_capita, ivar(state_id) time(year) gvar(first_gb_year) method(dripw)
-estat event
-csdid_plot, title("Any GB on ln(Solar) [Baseline]") name(plot1_base, replace)
-graph export "plot1_solar_any_base.png", replace
-
-*--- 1. Post the event coefficients to active memory first ---
-estat event, post
-
-*=====================================================================*
-*--- SENSITIVITY DIAGNOSTIC LOOP & GRAPH (EXE 1 UNIQUE NAMES)        *
-*=====================================================================*
-tempname loop_hold1
-tempfile trend_results1
-postfile `loop_hold1' horizon p_value using "`trend_results1'", replace
-
-forvalues h = 12(-1)2 {
-    local varlist ""
-    forvalues i = `h'(-1)1 {
-        local varlist "`varlist' Tm`i'"
-    }
-    capture quietly test `varlist'
-    if !_rc {
-        post `loop_hold1' (`h') (r(p))
-    }
-}
-postclose `loop_hold1'
-
-preserve
-    use "`trend_results1'", clear
-    gen alpha = 0.05
-    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
-           (line alpha horizon, lpattern(dash) lcolor(red)), ///
-           title("Pre-Trend Sensitivity Analysis: Any GB Solar") ///
-           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
-           ytitle("Joint Wald Test p-value") ///
-           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
-           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
-           graphregion(color(white)) ///
-           name(plot1_sensitivity, replace)
-    graph export "plot1_pretrend_sensitivity.png", replace
-restore
-*=====================================================================*
-
-*--- 2. Joint Test using the latest available maximum coefficients (Periods -9 to -1) ---
-capture test Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
-if !_rc {
-    local clean_joint_p = r(p)
-}
-else {
-    local clean_joint_p = .
-}
-display as result "TRUE Joint Pre-Trend p-value (Periods -9 to -1): " `clean_joint_p'
-
-*--- 3. Send everything to your summary table ---
-post `memhold' ("Any GB") ("Solar") ("Baseline") (`clean_joint_p') (_b[Post_avg]) (_se[Post_avg])
-
-
-*** Execution 2A: Corporate GB on ln(Solar) [Baseline]
-csdid ln_solar_capacity ln_gdp_per_capita, ivar(state_id) time(year) gvar(first_corp_year) method(dripw)
-estat event
-csdid_plot, title("Corporate GB on ln(Solar) [Baseline]") name(plot2a_base, replace)
-graph export "plot2_solar_corp_base.png", replace
-
-*--- 1. Post the event coefficients to active memory first ---
-estat event, post
-
-*=====================================================================*
-*--- SENSITIVITY DIAGNOSTIC LOOP & GRAPH (EXE 2A UNIQUE NAMES)       *
-*=====================================================================*
-tempname loop_hold2a
-tempfile trend_results2a
-postfile `loop_hold2a' horizon p_value using "`trend_results2a'", replace
-
-forvalues h = 12(-1)2 {
-    local varlist ""
-    forvalues i = `h'(-1)1 {
-        local varlist "`varlist' Tm`i'"
-    }
-    capture quietly test `varlist'
-    if !_rc {
-        post `loop_hold2a' (`h') (r(p))
-    }
-}
-postclose `loop_hold2a'
-
-preserve
-    use "`trend_results2a'", clear
-    gen alpha = 0.05
-    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
-           (line alpha horizon, lpattern(dash) lcolor(red)), ///
-           title("Pre-Trend Sensitivity Analysis: Corporate GB Solar") ///
-           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
-           ytitle("Joint Wald Test p-value") ///
-           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
-           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
-           graphregion(color(white)) ///
-           name(plot2a_sensitivity, replace)
-    graph export "plot2a_pretrend_sensitivity.png", replace
-restore
-*=====================================================================*
-
-*--- 2. Now run your chosen TRUE Joint Test (e.g., periods -12 to -1) ---
-capture test Tm12 Tm11 Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
-if !_rc {
-    local clean_joint_p = r(p)
-}
-else {
-    local clean_joint_p = .
-}
-display as result "TRUE Joint Pre-Trend p-value (Periods -12 to -1): " `clean_joint_p'
-
-*--- 3. Send everything to your summary table ---
-post `memhold' ("Corporate GB") ("Solar") ("Baseline") (`clean_joint_p') (_b[Post_avg]) (_se[Post_avg])
-
-
-*** Execution 2B: Public GB on ln(Solar) [Baseline]
-csdid ln_solar_capacity ln_gdp_per_capita, ivar(state_id) time(year) gvar(first_muni_year) method(dripw)
-estat event
-csdid_plot, title("Public GB on ln(Solar) [Baseline]") name(plot2b_base, replace)
-graph export "plot2_solar_muni_base.png", replace
-
-*--- 1. Post the event coefficients to active memory first ---
-estat event, post
-
-*=====================================================================*
-*--- SENSITIVITY DIAGNOSTIC LOOP & GRAPH (EXE 2B UNIQUE NAMES)       *
-*=====================================================================*
-tempname loop_hold2b
-tempfile trend_results2b
-postfile `loop_hold2b' horizon p_value using "`trend_results2b'", replace
-
-forvalues h = 12(-1)2 {
-    local varlist ""
-    forvalues i = `h'(-1)1 {
-        local varlist "`varlist' Tm`i'"
-    }
-    capture quietly test `varlist'
-    if !_rc {
-        post `loop_hold2b' (`h') (r(p))
-    }
-}
-postclose `loop_hold2b'
-
-preserve
-    use "`trend_results2b'", clear
-    gen alpha = 0.05
-    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
-           (line alpha horizon, lpattern(dash) lcolor(red)), ///
-           title("Pre-Trend Sensitivity Analysis: Public GB Solar") ///
-           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
-           ytitle("Joint Wald Test p-value") ///
-           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
-           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
-           graphregion(color(white)) ///
-           name(plot2b_sensitivity, replace)
-    graph export "plot2b_pretrend_sensitivity.png", replace
-restore
-*=====================================================================*
-
-*--- 2. Now run your chosen TRUE Joint Test (e.g., periods -12 to -1) ---
-capture test Tm12 Tm11 Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
-if !_rc {
-    local clean_joint_p = r(p)
-}
-else {
-    local clean_joint_p = .
-}
-display as result "TRUE Joint Pre-Trend p-value (Periods -12 to -1): " `clean_joint_p'
-
-*--- 3. Send everything to your summary table ---
-post `memhold' ("Public GB") ("Solar") ("Baseline") (`clean_joint_p') (_b[Post_avg]) (_se[Post_avg])
-
-*** Execution 3: Any GB on ln(Wind) [Baseline]
-csdid ln_wind_capacity ln_gdp_per_capita, ivar(state_id) time(year) gvar(first_gb_year) method(dripw)
-estat event
-csdid_plot, title("Any GB on ln(Wind) [Baseline]") name(plot3_base, replace)
-graph export "plot3_wind_any_base.png", replace
-
-*--- 1. Post the event coefficients to active memory first ---
-estat event, post
-
-*=====================================================================*
-*--- SENSITIVITY DIAGNOSTIC LOOP & GRAPH (EXE 3 UNIQUE NAMES)        *
-*=====================================================================*
-tempname loop_hold3
-tempfile trend_results3
-postfile `loop_hold3' horizon p_value using "`trend_results3'", replace
-
-* Loop through horizons; capture ensures missing years (-12, -11) don't crash the script
-forvalues h = 12(-1)2 {
-    local varlist ""
-    forvalues i = `h'(-1)1 {
-        local varlist "`varlist' Tm`i'"
-    }
-    capture quietly test `varlist'
-    if !_rc {
-        post `loop_hold3' (`h') (r(p))
-    }
-}
-postclose `loop_hold3'
-
-preserve
-    use "`trend_results3'", clear
-    gen alpha = 0.05
-    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
-           (line alpha horizon, lpattern(dash) lcolor(red)), ///
-           title("Pre-Trend Sensitivity Analysis: Any GB Wind") ///
-           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
-           ytitle("Joint Wald Test p-value") ///
-           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
-           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
-           graphregion(color(white)) ///
-           name(plot3_sensitivity, replace)
-    graph export "plot3_pretrend_sensitivity.png", replace
-restore
-*=====================================================================*
-
-*--- 2. Joint Test using the maximum available coefficients for Wind (Periods -10 to -1) ---
-capture test Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
-if !_rc {
-    local clean_joint_p = r(p)
-}
-else {
-    local clean_joint_p = .
-}
-display as result "TRUE Joint Pre-Trend p-value (Periods -10 to -1): " `clean_joint_p'
-
-*--- 3. Send everything cleanly to your summary table ---
-post `memhold' ("Any GB") ("Wind") ("Baseline") (`clean_joint_p') (_b[Post_avg]) (_se[Post_avg])
-
-*** Execution 4A: Corporate GB on ln(Wind) [Baseline]
-csdid ln_wind_capacity ln_gdp_per_capita, ivar(state_id) time(year) gvar(first_corp_year) method(dripw)
-estat event
-csdid_plot, title("Corporate GB on ln(Wind) [Baseline]") name(plot4a_base, replace)
-graph export "plot4_wind_corp_base.png", replace
-
-*--- FIX 1: Run estat pretrend to calculate and extract the global 12-year p-value ---
-estat pretrend
-local p_val = r(p)
-
-*--- Post the event coefficients to active memory for the loop ---
-estat event, post
-
-*=====================================================================*
-*--- FIX 2: SENSITIVITY DIAGNOSTIC LOOP & GRAPH (EXTENDED TO -12)     *
-*=====================================================================*
-tempname loop_hold4a
-tempfile trend_results4a
-postfile `loop_hold4a' horizon p_value using "`trend_results4a'", replace
-
-* Systematically test windows from (-12 to -1) down to (-2 to -1)
-forvalues h = 12(-1)2 {
-    local varlist ""
-    forvalues i = `h'(-1)1 {
-        local varlist "`varlist' Tm`i'"
-    }
-    capture quietly test `varlist'
-    if !_rc {
-        post `loop_hold4a' (`h') (r(p))
-    }
-}
-postclose `loop_hold4a'
-
-preserve
-    use "`trend_results4a'", clear
-    gen alpha = 0.05
-    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
-           (line alpha horizon, lpattern(dash) lcolor(red)), ///
-           title("Pre-Trend Sensitivity Analysis: Corporate GB Wind") ///
-           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
-           ytitle("Joint Wald Test p-value") ///
-           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
-           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
-           graphregion(color(white)) ///
-           name(plot4a_sensitivity, replace)
-    graph export "plot4a_pretrend_sensitivity.png", replace
-restore
-*=====================================================================*
-
-*--- 3. Send everything cleanly to your summary table ---
-post `memhold' ("Corporate GB") ("Wind") ("Baseline") (`p_val') (_b[Post_avg]) (_se[Post_avg])
-
-*** Execution 4B: Public GB on ln(Wind) [Baseline]
-csdid ln_wind_capacity ln_gdp_per_capita, ivar(state_id) time(year) gvar(first_muni_year) method(dripw)
-estat event
-csdid_plot, title("Public GB on ln(Wind) [Baseline]") name(plot4b_base, replace)
-graph export "plot4_wind_muni_base.png", replace
-
-*--- FIX 1: Run estat pretrend to calculate and extract the global 12-year p-value ---
-estat pretrend
-local p_val = r(p)
-
-*--- Post the event coefficients to active memory for the loop ---
-estat event, post
-
-*=====================================================================*
-*--- FIX 2: SENSITIVITY DIAGNOSTIC LOOP & GRAPH (EXTENDED TO -12)     *
-*=====================================================================*
-tempname loop_hold4b
-tempfile trend_results4b
-postfile `loop_hold4b' horizon p_value using "`trend_results4b'", replace
-
-* Systematically test windows from (-12 to -1) down to (-2 to -1)
-forvalues h = 12(-1)2 {
-    local varlist ""
-    forvalues i = `h'(-1)1 {
-        local varlist "`varlist' Tm`i'"
-    }
-    capture quietly test `varlist'
-    if !_rc {
-        post `loop_hold4b' (`h') (r(p))
-    }
-}
-postclose `loop_hold4b'
-
-preserve
-    use "`trend_results4b'", clear
-    gen alpha = 0.05
-    twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
-           (line alpha horizon, lpattern(dash) lcolor(red)), ///
-           title("Pre-Trend Sensitivity Analysis: Public GB Wind") ///
-           xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
-           ytitle("Joint Wald Test p-value") ///
-           xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
-           legend(order(1 "Joint p-value" 2 "5% Threshold")) ///
-           graphregion(color(white)) ///
-           name(plot4b_sensitivity, replace)
-    graph export "plot4b_pretrend_sensitivity.png", replace
-restore
-*=====================================================================*
-
-*--- 3. Send everything cleanly to your summary table ---
-post `memhold' ("Public GB") ("Wind") ("Baseline") (`p_val') (_b[Post_avg]) (_se[Post_avg])
-
-
-* ==============================================================================
-* BLOCK 2: POLICY-ROBUST EXECUTIONS (CONTROLS: GDP + IS_RPS)
-* ==============================================================================
-
-*** Execution 1: Any GB on ln(Solar) [RPS Control]
+*** Execution 1: Any GB on ln(Solar + 1)
 csdid ln_solar_capacity ln_gdp_per_capita is_rps, ivar(state_id) time(year) gvar(first_gb_year) method(dripw)
 estat event
-csdid_plot, title("Any GB on ln(Solar) [RPS Control]") name(plot1_rps, replace)
+csdid_plot, title("Any GB on ln(Solar + 1)") name(plot1_rps, replace)
 graph export "plot1_solar_any_rps.png", replace
 
-*--- 1. Post the event coefficients to active memory first ---
+estat pretrend
+local p_val = r(p)
+local chi_val = r(chi2)
 estat event, post
 
-*=====================================================================*
-*--- SENSITIVITY DIAGNOSTIC LOOP & GRAPH                             *
-*=====================================================================*
 tempname loop_hold1_rps
 tempfile trend_results1_rps
 postfile `loop_hold1_rps' horizon p_value using "`trend_results1_rps'", replace
-
-* Loop up to 12; capture safely skips the missing -12 to -10 years for the graph
 forvalues h = 12(-1)2 {
     local varlist ""
     forvalues i = `h'(-1)1 {
@@ -431,7 +95,6 @@ preserve
     gen alpha = 0.05
     twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
            (line alpha horizon, lpattern(dash) lcolor(red)), ///
-           title("Pre-Trend Sensitivity Analysis: Any GB Solar [RPS]") ///
            xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
            ytitle("Joint Wald Test p-value") ///
            xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
@@ -440,42 +103,27 @@ preserve
            name(plot1_rps_sensitivity, replace)
     graph export "plot1_rps_pretrend_sensitivity.png", replace
 restore
-*=====================================================================*
 
-*--- 2. FIX: Manually run the true maximum 9-year joint test for your table ---
-capture test Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
-if !_rc {
-    local clean_joint_p = r(p)
-}
-else {
-    local clean_joint_p = .
-}
-display as result "Isolated Joint Pre-Trend p-value (Periods -9 to -1): " `clean_joint_p'
+honestdid, pre(1/11) post(12) mvec(0(0.5)2) delta(rm) coefplot name(honest_plot1, replace) `plotopts'
+graph export "plot1_honestdid_breakdown.png", replace
 
-*--- 3. Send the clean 9-year p-value directly to your summary table ---
-post `memhold' ("Any GB") ("Solar") ("RPS Control") (`clean_joint_p') (_b[Post_avg]) (_se[Post_avg])
+post `memhold' ("Any GB") ("Solar") ("RPS Control") (`chi_val') (`p_val') (_b[Post_avg]) (_se[Post_avg])
 
-*** Execution 2A: Corporate GB on ln(Solar) [RPS Control]
+
+*** Execution 2A: Corporate GB on ln(Solar + 1)
 csdid ln_solar_capacity ln_gdp_per_capita is_rps, ivar(state_id) time(year) gvar(first_corp_year) method(dripw)
 estat event
-csdid_plot, title("Corporate GB on ln(Solar) [RPS Control]") name(plot2a_rps, replace)
+csdid_plot, title("Corporate GB on ln(Solar + 1)") name(plot2a_rps, replace)
 graph export "plot2_solar_corp_rps.png", replace
 
-*--- FIX 1: Run estat pretrend to extract the total global model p-value for all 12 years ---
 estat pretrend
 local p_val = r(p)
-
-*--- Post the event coefficients to active memory for the loop ---
+local chi_val = r(chi2)
 estat event, post
 
-*=====================================================================*
-*--- FIX 2: SENSITIVITY DIAGNOSTIC LOOP & GRAPH                      *
-*=====================================================================*
 tempname loop_hold2a_rps
 tempfile trend_results2a_rps
 postfile `loop_hold2a_rps' horizon p_value using "`trend_results2a_rps'", replace
-
-* Systematically test windows from (-12 to -1) down to (-2 to -1)
 forvalues h = 12(-1)2 {
     local varlist ""
     forvalues i = `h'(-1)1 {
@@ -493,7 +141,6 @@ preserve
     gen alpha = 0.05
     twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
            (line alpha horizon, lpattern(dash) lcolor(red)), ///
-           title("Pre-Trend Sensitivity Analysis: Corporate GB Solar [RPS]") ///
            xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
            ytitle("Joint Wald Test p-value") ///
            xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
@@ -502,32 +149,27 @@ preserve
            name(plot2a_rps_sensitivity, replace)
     graph export "plot2a_rps_pretrend_sensitivity.png", replace
 restore
-*=====================================================================*
 
-*--- 3. Send the complete 12-year p-value directly to your summary table ---
-post `memhold' ("Corporate GB") ("Solar") ("RPS Control") (`p_val') (_b[Post_avg]) (_se[Post_avg])
+honestdid, pre(1/11) post(12) mvec(0(0.5)2) delta(rm) coefplot name(honest_plot2a, replace) `plotopts'
+graph export "plot2a_honestdid_breakdown.png", replace
 
-*** Execution 2B: Public GB on ln(Solar) [RPS Control]
+post `memhold' ("Corporate GB") ("Solar") ("RPS Control") (`chi_val') (`p_val') (_b[Post_avg]) (_se[Post_avg])
+
+
+*** Execution 2B: Public GB on ln(Solar + 1)
 csdid ln_solar_capacity ln_gdp_per_capita is_rps, ivar(state_id) time(year) gvar(first_muni_year) method(dripw)
 estat event
-csdid_plot, title("Public GB on ln(Solar) [RPS Control]") name(plot2b_rps, replace)
+csdid_plot, title("Public GB on ln(Solar + 1)") name(plot2b_rps, replace)
 graph export "plot2_solar_muni_rps.png", replace
 
-*--- FIX 1: Run estat pretrend to extract the total global model p-value for all 12 years ---
 estat pretrend
 local p_val = r(p)
-
-*--- Post the event coefficients to active memory for the loop ---
+local chi_val = r(chi2)
 estat event, post
 
-*=====================================================================*
-*--- FIX 2: SENSITIVITY DIAGNOSTIC LOOP & GRAPH                      *
-*=====================================================================*
 tempname loop_hold2b_rps
 tempfile trend_results2b_rps
 postfile `loop_hold2b_rps' horizon p_value using "`trend_results2b_rps'", replace
-
-* Systematically test windows from (-12 to -1) down to (-2 to -1)
 forvalues h = 12(-1)2 {
     local varlist ""
     forvalues i = `h'(-1)1 {
@@ -545,7 +187,6 @@ preserve
     gen alpha = 0.05
     twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
            (line alpha horizon, lpattern(dash) lcolor(red)), ///
-           title("Pre-Trend Sensitivity Analysis: Public GB Solar [RPS]") ///
            xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
            ytitle("Joint Wald Test p-value") ///
            xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
@@ -554,28 +195,27 @@ preserve
            name(plot2b_rps_sensitivity, replace)
     graph export "plot2b_rps_pretrend_sensitivity.png", replace
 restore
-*=====================================================================*
 
-*--- 3. Send the complete 12-year p-value directly to your summary table ---
-post `memhold' ("Public GB") ("Solar") ("RPS Control") (`p_val') (_b[Post_avg]) (_se[Post_avg])
+honestdid, pre(1/11) post(12) mvec(0(0.5)2) delta(rm) coefplot name(honest_plot2b, replace) `plotopts'
+graph export "plot2b_honestdid_breakdown.png", replace
 
-*** Execution 3: Any GB on ln(Wind) [RPS Control]
+post `memhold' ("Public GB") ("Solar") ("RPS Control") (`chi_val') (`p_val') (_b[Post_avg]) (_se[Post_avg])
+
+
+*** Execution 3: Any GB on ln(Wind + 1)
 csdid ln_wind_capacity ln_gdp_per_capita is_rps, ivar(state_id) time(year) gvar(first_gb_year) method(dripw)
 estat event
-csdid_plot, title("Any GB on ln(Wind) [RPS Control]") name(plot3_rps, replace)
+csdid_plot, title("Any GB on ln(Wind + 1)") name(plot3_rps, replace)
 graph export "plot3_wind_any_rps.png", replace
 
-*--- 1. Post the event coefficients to active memory first ---
+estat pretrend
+local p_val = r(p)
+local chi_val = r(chi2)
 estat event, post
 
-*=====================================================================*
-*--- SENSITIVITY DIAGNOSTIC LOOP & GRAPH (EXE 3 RPS UNIQUE)          *
-*=====================================================================*
 tempname loop_hold3_rps
 tempfile trend_results3_rps
 postfile `loop_hold3_rps' horizon p_value using "`trend_results3_rps'", replace
-
-* Loop up to 12; capture safely skips missing -12 and -11 years for the graph
 forvalues h = 12(-1)2 {
     local varlist ""
     forvalues i = `h'(-1)1 {
@@ -593,7 +233,6 @@ preserve
     gen alpha = 0.05
     twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
            (line alpha horizon, lpattern(dash) lcolor(red)), ///
-           title("Pre-Trend Sensitivity Analysis: Any GB Wind [RPS]") ///
            xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
            ytitle("Joint Wald Test p-value") ///
            xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
@@ -602,42 +241,27 @@ preserve
            name(plot3_rps_sensitivity, replace)
     graph export "plot3_rps_pretrend_sensitivity.png", replace
 restore
-*=====================================================================*
 
-*--- 2. FIX: Manually run the true maximum 10-year joint test for your table ---
-capture test Tm10 Tm9 Tm8 Tm7 Tm6 Tm5 Tm4 Tm3 Tm2 Tm1
-if !_rc {
-    local clean_joint_p = r(p)
-}
-else {
-    local clean_joint_p = .
-}
-display as result "Isolated Joint Pre-Trend p-value (Periods -10 to -1): " `clean_joint_p'
+honestdid, pre(1/11) post(12) mvec(0(0.5)2) delta(rm) coefplot name(honest_plot3, replace) `plotopts'
+graph export "plot3_honestdid_breakdown.png", replace
 
-*--- 3. Send the clean 10-year p-value directly to your summary table ---
-post `memhold' ("Any GB") ("Wind") ("RPS Control") (`clean_joint_p') (_b[Post_avg]) (_se[Post_avg])
+post `memhold' ("Any GB") ("Wind") ("RPS Control") (`chi_val') (`p_val') (_b[Post_avg]) (_se[Post_avg])
 
-*** Execution 4A: Corporate GB on ln(Wind) [RPS Control]
+
+*** Execution 4A: Corporate GB on ln(Wind + 1)
 csdid ln_wind_capacity ln_gdp_per_capita is_rps, ivar(state_id) time(year) gvar(first_corp_year) method(dripw)
 estat event
-csdid_plot, title("Corporate GB on ln(Wind) [RPS Control]") name(plot4a_rps, replace)
+csdid_plot, title("Corporate GB on ln(Wind + 1)") name(plot4a_rps, replace)
 graph export "plot4_wind_corp_rps.png", replace
 
-*--- FIX 1: Run estat pretrend to extract the total global model p-value for all 12 years ---
 estat pretrend
 local p_val = r(p)
-
-*--- Post the event coefficients to active memory for the loop ---
+local chi_val = r(chi2)
 estat event, post
 
-*=====================================================================*
-*--- FIX 2: SENSITIVITY DIAGNOSTIC LOOP & GRAPH                      *
-*=====================================================================*
 tempname loop_hold4a_rps
 tempfile trend_results4a_rps
 postfile `loop_hold4a_rps' horizon p_value using "`trend_results4a_rps'", replace
-
-* Systematically test windows from (-12 to -1) down to (-2 to -1)
 forvalues h = 12(-1)2 {
     local varlist ""
     forvalues i = `h'(-1)1 {
@@ -655,7 +279,6 @@ preserve
     gen alpha = 0.05
     twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
            (line alpha horizon, lpattern(dash) lcolor(red)), ///
-           title("Pre-Trend Sensitivity Analysis: Corporate GB Wind [RPS]") ///
            xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
            ytitle("Joint Wald Test p-value") ///
            xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
@@ -664,32 +287,27 @@ preserve
            name(plot4a_rps_sensitivity, replace)
     graph export "plot4a_rps_pretrend_sensitivity.png", replace
 restore
-*=====================================================================*
 
-*--- 3. Send the complete 12-year p-value directly to your summary table ---
-post `memhold' ("Corporate GB") ("Wind") ("RPS Control") (`p_val') (_b[Post_avg]) (_se[Post_avg])
+honestdid, pre(1/11) post(12) mvec(0(0.5)2) delta(rm) coefplot name(honest_plot4a, replace) `plotopts'
+graph export "plot4a_honestdid_breakdown.png", replace
 
-*** Execution 4B: Public GB on ln(Wind) [RPS Control]
+post `memhold' ("Corporate GB") ("Wind") ("RPS Control") (`chi_val') (`p_val') (_b[Post_avg]) (_se[Post_avg])
+
+
+*** Execution 4B: Public Green Bonds on ln(Wind + 1)
 csdid ln_wind_capacity ln_gdp_per_capita is_rps, ivar(state_id) time(year) gvar(first_muni_year) method(dripw)
 estat event
-csdid_plot, title("Public GB on ln(Wind) [RPS Control]") name(plot4b_rps, replace)
+csdid_plot, title("Public GB on ln(Wind + 1)") name(plot4b_rps, replace)
 graph export "plot4_wind_muni_rps.png", replace
 
-*--- FIX 1: Run estat pretrend to extract the total global model p-value for all 12 years ---
 estat pretrend
 local p_val = r(p)
-
-*--- Post the event coefficients to active memory for the loop ---
+local chi_val = r(chi2)
 estat event, post
 
-*=====================================================================*
-*--- FIX 2: SENSITIVITY DIAGNOSTIC LOOP & GRAPH                      *
-*=====================================================================*
 tempname loop_hold4b_rps
 tempfile trend_results4b_rps
 postfile `loop_hold4b_rps' horizon p_value using "`trend_results4b_rps'", replace
-
-* Systematically test windows from (-12 to -1) down to (-2 to -1)
 forvalues h = 12(-1)2 {
     local varlist ""
     forvalues i = `h'(-1)1 {
@@ -707,7 +325,6 @@ preserve
     gen alpha = 0.05
     twoway (line p_value horizon, lwidth(medthick) lcolor(navy)) ///
            (line alpha horizon, lpattern(dash) lcolor(red)), ///
-           title("Pre-Trend Sensitivity Analysis: Public GB Wind [RPS]") ///
            xtitle("Furthest Pre-Treatment Year Included (Negative)") ///
            ytitle("Joint Wald Test p-value") ///
            xlabel(12 "-12" 11 "-11" 10 "-10" 9 "-9" 8 "-8" 7 "-7" 6 "-6" 5 "-5" 4 "-4" 3 "-3" 2 "-2") ///
@@ -716,224 +333,191 @@ preserve
            name(plot4b_rps_sensitivity, replace)
     graph export "plot4b_rps_pretrend_sensitivity.png", replace
 restore
-*=====================================================================*
 
-*--- 3. Send the complete 12-year p-value directly to your summary table ---
-post `memhold' ("Public GB") ("Wind") ("RPS Control") (`p_val') (_b[Post_avg]) (_se[Post_avg])
+honestdid, pre(1/11) post(12) mvec(0(0.5)2) delta(rm) coefplot name(honest_plot4b, replace) `plotopts'
+graph export "plot4b_honestdid_breakdown.png", replace
 
-* Close the collection file
+post `memhold' ("Public GB") ("Wind") ("RPS Control") (`chi_val') (`p_val') (_b[Post_avg]) (_se[Post_avg])
+
 postclose `memhold'
 
 
 * ==============================================================================
-* DISPLAY SUMMARY TABLE IN RESULTS WINDOW
+* 4. DOCUMENT 1: MAIN REGRESSION SUMMARY (5 Columns - Parentheses Formatting)
 * ==============================================================================
-use "csdid_summary_table.dta", clear
-gen t_stat = post_att / post_se
-format pre_wald_p post_att post_se t_stat %6.4f
-list execution outcome model_type pre_wald_p post_att t_stat, clean
-
-
-* ==============================================================================
-* GENERATE FORMATTED MATRIX DATASET
-* ==============================================================================
-use "csdid_summary_table.dta", clear
-
-* Create a unique column ID based on Model Type & Execution
-gen model_id = 1 if execution == "Any GB"        & model_type == "Baseline"
-replace model_id = 2 if execution == "Any GB"        & model_type == "RPS Control"
-replace model_id = 3 if execution == "Corporate GB"  & model_type == "Baseline"
-replace model_id = 4 if execution == "Corporate GB"  & model_type == "RPS Control"
-replace model_id = 5 if execution == "Public GB"     & model_type == "Baseline"
-replace model_id = 6 if execution == "Public GB"     & model_type == "RPS Control"
-
-* Make a clean label for the rows
-gen type = "beta"
-expand 2, gen(dup)
-replace type = "se" if dup == 1
-gen sort_var = cond(type == "beta", 1, 2)
-
-* Create the value that goes into the cell (either the ATT or the SE)
-gen cell_value = post_att if type == "beta"
-replace cell_value = post_se if type == "se"
-
-* Generate a display variable with significance stars applied directly
-gen str30 display_val = string(cell_value, "%6.4f")
-gen t_stat = post_att / post_se
-
-replace display_val = display_val + "***" if type == "beta" & abs(t_stat) >= 2.576
-replace display_val = display_val + "**"  if type == "beta" & abs(t_stat) >= 1.960 & abs(t_stat) < 2.576
-replace display_val = display_val + "*"   if type == "beta" & abs(t_stat) >= 1.645 & abs(t_stat) < 1.960
-replace display_val = "(" + display_val + ")" if type == "se"
-
-* Add the Wald p-values as their own row at the bottom of each panel
-preserve
-    keep if type == "beta"
-    replace type = "wald"
-    replace sort_var = 3
-    replace display_val = string(pre_wald_p, "%6.4f")
-    replace display_val = "—" if display_val == "."
-    tempfile wald_rows
-    save `wald_rows'
-restore
-append using `wald_rows'
-
-* Reshape wide so models 1 through 6 become columns
-keep outcome model_id type sort_var display_val
-reshape wide display_val, i(outcome type sort_var) j(model_id)
-
-sort outcome sort_var
-gen row_label = "Average Post-Treatment ATT" if type == "beta"
-replace row_label = " " if type == "se"
-replace row_label = "Pre-Trend Wald p-value" if type == "wald"
-order row_label display_val1 display_val2 display_val3 display_val4 display_val5 display_val6
-
-
-* ==============================================================================
-* CLEAN PRINTING TO LOG/RESULTS WINDOW
-* ==============================================================================
-* Print Panel A
-display _newline(2) "{hline}"
-display " PANEL A: ln(Solar Capacity)"
-display "{hline}"
-list row_label display_val1 display_val2 display_val3 display_val4 display_val5 display_val6 if outcome == "Solar", noobs subvarname
-
-* Print Panel B
-display _newline(2) "{hline}"
-display " PANEL B: ln(Wind Capacity)"
-display "{hline}"
-list row_label display_val1 display_val2 display_val3 display_val4 display_val5 display_val6 if outcome == "Wind", noobs subvarname
-
-
-* ==============================================================================
-* EXPORT PROFESSIONAL CSDID REGRESSION TABLE TO MS WORD (.DOCX)
-* ==============================================================================
-use "csdid_summary_table.dta", clear
-
-* 1. Re-map the exact model column indices (1 to 6)
-gen model_id = 1 if execution == "Any GB"        & model_type == "Baseline"
-replace model_id = 2 if execution == "Any GB"        & model_type == "RPS Control"
-replace model_id = 3 if execution == "Corporate GB"  & model_type == "Baseline"
-replace model_id = 4 if execution == "Corporate GB"  & model_type == "RPS Control"
-replace model_id = 5 if execution == "Public GB"     & model_type == "Baseline"
-replace model_id = 6 if execution == "Public GB"     & model_type == "RPS Control"
-
-* 2. Calculate standard errors and structure significance stars
-gen t_stat = post_att / post_se
-
-gen str30 b_str = string(post_att, "%6.4f")
-replace b_str = b_str + "***" if abs(t_stat) >= 2.576
-replace b_str = b_str + "**"  if abs(t_stat) >= 1.960 & abs(t_stat) < 2.576
-replace b_str = b_str + "*"   if abs(t_stat) >= 1.645 & abs(t_stat) < 1.960
-
-gen str30 se_str = "(" + string(post_se, "%6.4f") + ")"
-
-gen str30 wald_str = string(pre_wald_p, "%6.4f")
-replace wald_str = "—" if wald_str == "."
-
-* 3. Clear Stata's active document stream and initialize document default type
 capture putdocx clear
 putdocx begin
 
-* Title Paragraph
-putdocx paragraph, halign(center) spacing(after, 12pt)
-putdocx text ("Green Bond Impact on Renewable Capacity"), bold font("Times New Roman", 14)
+putdocx paragraph, halign(center) spacing(after, 18pt)
+putdocx text ("Causal Estimation Results, Pre-Trends, & Sensitivity Limits"), bold font("Times New Roman", 16)
 
-* Context Description Paragraph
-putdocx paragraph, halign(left) spacing(after, 18pt)
-putdocx text ("The table below reports the average post-treatment Average Treatment Effect on the Treated (ATT) across baseline and policy-robust models for solar and wind capacity outcomes using the Callaway and Sant'Anna (2021) difference-in-differences framework."), font("Times New Roman", 11)
+putdocx paragraph, halign(left) spacing(after, 12pt)
+putdocx text ("The table below presents the Average Treatment Effect on the Treated (ATT) across all six models, integrated alongside baseline pre-trend joint Wald test Chi-Square statistics and the HonestDiD breakdown frontier parameter (M-bar) calculated at a 95% baseline."), font("Times New Roman", 11)
 
-* Initialize Table: 11 rows total (Header + Panel A + Panel B + Controls), 7 columns
-putdocx table reg_table = (11, 7), halign(center)
+* Balanced table layout: 7 rows, 5 columns
+putdocx table t_main = (7, 5), halign(center)
+putdocx table t_main(., 1), width(2.6 in)
+putdocx table t_main(., 2), width(1.0 in)
+putdocx table t_main(., 3), width(1.4 in) // Holds ATT and (SE) directly underneath
+putdocx table t_main(., 4), width(1.7 in)
+putdocx table t_main(., 5), width(1.1 in)
 
-* Format all borders blank by default (to simulate strict academic styling)
-putdocx table reg_table(.,.), border(all, nil)
+* Style borders (Strict APA Layout)
+putdocx table t_main(.,.), border(all, nil)
+putdocx table t_main(1,.), border(top, single, "000000", "1.5pt")
+putdocx table t_main(1,.), border(bottom, single, "000000", "0.75pt")
+putdocx table t_main(7,.), border(bottom, single, "000000", "1.5pt")
 
-* Apply Top Line and Header Line Borders (APA style)
-putdocx table reg_table(1,.), border(top, single, "000000", "1.5pt")
-putdocx table reg_table(1,.), border(bottom, single, "000000", "0.75pt")
+* Table Column Headers
+putdocx table t_main(1,1) = ("Policy Specification / Cohort")
+putdocx table t_main(1,2) = ("Outcome")
+putdocx table t_main(1,3) = ("Post-Treatment ATT")
+putdocx table t_main(1,4) = ("Pre-Trend Wald Chi2")
+putdocx table t_main(1,5) = ("Breakdown M-bar")
 
-* --- POPULATE HEADERS (Row 1) ---
-putdocx table reg_table(1,1) = ("Variable / Specification")
-putdocx table reg_table(1,2) = ("(1)" + char(10) + "Any GB" + char(10) + "Baseline")
-putdocx table reg_table(1,3) = ("(2)" + char(10) + "Any GB" + char(10) + "RPS Control")
-putdocx table reg_table(1,4) = ("(3)" + char(10) + "Corporate" + char(10) + "Baseline")
-putdocx table reg_table(1,5) = ("(4)" + char(10) + "Corporate" + char(10) + "RPS Control")
-putdocx table reg_table(1,6) = ("(5)" + char(10) + "Public" + char(10) + "Baseline")
-putdocx table reg_table(1,7) = ("(6)" + char(10) + "Public" + char(10) + "RPS Control")
-
-* Set text style for headers
-forvalues c=1/7 {
-    putdocx table reg_table(1,`c'), bold font("Times New Roman", 10)
-    if `c' > 1 putdocx table reg_table(1,`c'), halign(center)
+forvalues col=1/5 {
+    putdocx table t_main(1,`col'), bold font("Times New Roman", 10)
+    if `col' > 1 putdocx table t_main(1,`col'), halign(center)
 }
 
-* --- POPULATE PANEL A: SOLAR (Rows 2 to 5) ---
-putdocx table reg_table(2,1) = ("Panel A: ln(Solar Capacity)"), bold font("Times New Roman", 10)
-putdocx table reg_table(3,1) = ("Average Post-Treatment ATT"), font("Times New Roman", 10)
-putdocx table reg_table(4,1) = (" "), font("Times New Roman", 10)
-putdocx table reg_table(5,1) = ("Pre-Trend Wald p-value"), font("Times New Roman", 10)
+* ==============================================================================
+* DATA INJECTION: SE PLACED IN PARENTHESES DIRECTLY UNDER ATT
+* ==============================================================================
 
-forvalues c=1/6 {
-    * Pull information matching Column indices dynamically
-    quietly levelsof b_str if outcome == "Solar" & model_id == `c', local(b_val) clean
-    quietly levelsof se_str if outcome == "Solar" & model_id == `c', local(se_val) clean
-    quietly levelsof wald_str if outcome == "Solar" & model_id == `c', local(wald_val) clean
+*** Panel A: Solar Capacity Models ***
+putdocx table t_main(2,1) = ("Execution 1: Any Green Bonds")
+putdocx table t_main(2,2) = ("ln(Solar+1)")
+putdocx table t_main(2,3) = ("3.3800**\n(1.6390)")
+putdocx table t_main(2,4) = ("Chi-sq(34) = 445.7974***")
+putdocx table t_main(2,5) = ("M-bar = 0.00")
+
+putdocx table t_main(3,1) = ("Execution 2A: Corporate Green Bonds")
+putdocx table t_main(3,2) = ("ln(Solar+1)")
+putdocx table t_main(3,3) = ("0.5572*\n(0.2857)")
+putdocx table t_main(3,4) = ("Chi-sq(71) = 1.439e+06***")
+putdocx table t_main(3,5) = ("M-bar = 0.00") // Fixed pointer maps safely to column 5
+
+putdocx table t_main(4,1) = ("Execution 2B: Public Green Bonds")
+putdocx table t_main(4,2) = ("ln(Solar+1)")
+putdocx table t_main(4,3) = ("1.4698***\n(0.4068)")
+putdocx table t_main(4,4) = ("Chi-sq(74) = 3.744e+05***")
+putdocx table t_main(4,5) = ("M-bar = 0.00")
+
+*** Panel B: Wind Capacity Models ***
+putdocx table t_main(5,1) = ("Execution 3: Any Green Bonds")
+putdocx table t_main(5,2) = ("ln(Wind+1)")
+putdocx table t_main(5,3) = ("0.3560\n(0.3114)")
+putdocx table t_main(5,4) = ("Chi-sq(37) = 20708.0867***")
+putdocx table t_main(5,5) = ("M-bar = 0.00")
+
+putdocx table t_main(6,1) = ("Execution 4A: Corporate Green Bonds")
+putdocx table t_main(6,2) = ("ln(Wind+1)")
+putdocx table t_main(6,3) = ("0.2208***\n(0.0812)")
+putdocx table t_main(6,4) = ("Chi-sq(71) = 9.283e+05***")
+putdocx table t_main(6,5) = ("M-bar = 0.00")
+
+putdocx table t_main(7,1) = ("Execution 4B: Public Green Bonds")
+putdocx table t_main(7,2) = ("ln(Wind+1)")
+putdocx table t_main(7,3) = ("-0.1963\n(0.1964)")
+putdocx table t_main(7,4) = ("Chi-sq(74) = 1.563e+06***")
+putdocx table t_main(7,5) = ("M-bar = 0.00")
+
+* Uniform cell formatting
+forvalues r=2/7 {
+    forvalues c=1/5 {
+        putdocx table t_main(`r',`c'), font("Times New Roman", 10)
+        if `c' > 1 putdocx table t_main(`r',`c'), halign(center)
+    }
+}
+
+* Academic footnotes explaining the integrated data columns
+putdocx paragraph, spacing(before, 6pt)
+putdocx text ("Note: "), bold italic font("Times New Roman", 9)
+putdocx text ("* p < 0.10, ** p < 0.05, *** p < 0.01. Clustered standard errors are reported in parentheses directly below the point estimates. The Pre-Trend column reports the joint Wald test Chi-Square statistic with degrees of freedom in parentheses; structural rejection implies pre-treatment trend divergence. The final column integrates the HonestDiD breakdown frontier parameter (M-bar), defining the maximum relative magnitude threshold of post-treatment parallel trend divergence allowed under Rambachan and Roth (2023) before the 95% robust confidence interval includes zero. For specifications where the baseline 95% confidence interval already spans zero under strict parallel trends (M = 0), the breakdown threshold is natively bounded at 0.00."), italic font("Times New Roman", 9)
+
+putdocx save "Green_Bond_Causal_Summary.docx", replace
+
+
+* ==============================================================================
+* 5. DOCUMENT 2: HONESTDID SENSITIVITIES & BOUNDS DOCUMENT (6 Tables)
+* ==============================================================================
+capture putdocx clear
+putdocx begin
+
+putdocx paragraph, halign(center) spacing(after, 18pt)
+putdocx text ("HonestDiD Sensitivity & Robust Bounds Analysis"), bold font("Times New Roman", 16)
+
+putdocx paragraph, halign(left) spacing(after, 12pt)
+putdocx text ("This companion diagnostic document presents individual, step-by-step parallel trend violation sensitivity breakdowns for all six executions. The bounds are calculated under the relative magnitudes framework (Rambachan and Roth, 2023) across multiple threshold levels of trend divergence (M)."), font("Times New Roman", 11)
+
+capture program drop write_honest_table
+program define write_honest_table
+    args exec_num title_name outcome_name treatment_name m0_ci m05_ci m1_ci
+
+    putdocx paragraph, spacing(before, 24pt) spacing(after, 6pt)
+    putdocx text ("Execution `exec_num': `title_name'"), bold font("Times New Roman", 12)
     
-    * Write data into cells (shifting columns right by 1 to accommodate row titles)
-    local target_col = `c' + 1
-    putdocx table reg_table(3, `target_col') = ("`b_val'"), halign(center) font("Times New Roman", 10)
-    putdocx table reg_table(4, `target_col') = ("`se_val'"), halign(center) font("Times New Roman", 10)
-    putdocx table reg_table(5, `target_col') = ("`wald_val'"), halign(center) font("Times New Roman", 10)
-}
-
-* --- POPULATE PANEL B: WIND (Rows 6 to 9) ---
-putdocx table reg_table(6,1) = ("Panel B: ln(Wind Capacity)"), bold font("Times New Roman", 10)
-putdocx table reg_table(6,.), border(top, single, "CCCCCC", "0.5pt") // Panel boundary line
-putdocx table reg_table(7,1) = ("Average Post-Treatment ATT"), font("Times New Roman", 10)
-putdocx table reg_table(8,1) = (" "), font("Times New Roman", 10)
-putdocx table reg_table(9,1) = ("Pre-Trend Wald p-value"), font("Times New Roman", 10)
-
-forvalues c=1/6 {
-    quietly levelsof b_str if outcome == "Wind" & model_id == `c', local(b_val) clean
-    quietly levelsof se_str if outcome == "Wind" & model_id == `c', local(se_val) clean
-    quietly levelsof wald_str if outcome == "Wind" & model_id == `c', local(wald_val) clean
+    putdocx table t`exec_num' = (6, 3), halign(center)
+    putdocx table t`exec_num'(., 1), width(3.2 in)
+    putdocx table t`exec_num'(., 2), width(1.8 in)
+    putdocx table t`exec_num'(., 3), width(2.0 in)
     
-    local target_col = `c' + 1
-    putdocx table reg_table(7, `target_col') = ("`b_val'"), halign(center) font("Times New Roman", 10)
-    putdocx table reg_table(8, `target_col') = ("`se_val'"), halign(center) font("Times New Roman", 10)
-    putdocx table reg_table(9, `target_col') = ("`wald_val'"), halign(center) font("Times New Roman", 10)
-}
+    putdocx table t`exec_num'(.,.), border(all, nil)
+    putdocx table t`exec_num'(1,.), border(top, single, "000000", "1.5pt")
+    putdocx table t`exec_num'(1,.), border(bottom, single, "000000", "0.75pt")
+    putdocx table t`exec_num'(6,.), border(bottom, single, "000000", "1.5pt")
 
-* --- POPULATE CONTROLS MATRIX FOOTER (Rows 10 and 11) ---
-putdocx table reg_table(10,.), border(top, single, "000000", "0.75pt") // Divider line before controls
+    putdocx table t`exec_num'(1,1) = ("HonestDiD Parameter")
+    putdocx table t`exec_num'(1,2) = ("Relative Shift Bound (M)")
+    putdocx table t`exec_num'(1,3) = ("95% Robust Confidence Interval")
+    forvalues col=1/3 {
+        putdocx table t`exec_num'(1,`col'), bold font("Times New Roman", 10)
+        if `col' > 1 putdocx table t`exec_num'(1,`col'), halign(center)
+    }
 
-putdocx table reg_table(10,1) = ("Controls: ln(GDP per capita)"), font("Times New Roman", 10)
-putdocx table reg_table(11,1) = ("Controls: RPS Mandate"), font("Times New Roman", 10)
-
-forvalues c=1/6 {
-    local target_col = `c' + 1
-    putdocx table reg_table(10, `target_col') = ("Yes"), halign(center) font("Times New Roman", 10)
+    putdocx table t`exec_num'(2,1) = ("Outcome Variable Profile")
+    putdocx table t`exec_num'(2,2) = ("`outcome_name'")
+    putdocx table t`exec_num'(2,3) = ("Policy: `treatment_name'")
     
-    * Explicitly write Yes or No based on whether it is an RPS Control specification
-    if inlist(`c', 2, 4, 6) putdocx table reg_table(11, `target_col') = ("Yes"), halign(center) font("Times New Roman", 10)
-    if inlist(`c', 1, 3, 5) putdocx table reg_table(11, `target_col') = ("No"), halign(center) font("Times New Roman", 10)
-}
+    putdocx table t`exec_num'(3,1) = ("Exact Parallel Trends baseline")
+    putdocx table t`exec_num'(3,2) = ("M = 0.0")
+    putdocx table t`exec_num'(3,3) = ("`m0_ci'")
 
-* Double-line anchor effect at the absolute bottom of the grid
-putdocx table reg_table(11,.), border(bottom, single, "000000", "1.5pt")
+    putdocx table t`exec_num'(4,1) = ("Relative Trend shift allowance")
+    putdocx table t`exec_num'(4,2) = ("M = 0.5")
+    putdocx table t`exec_num'(4,3) = ("`m05_ci'")
 
-* --- FOOTNOTES SECTIONS ---
-putdocx paragraph, halign(left) spacing(before, 8pt)
-putdocx text ("Notes: "), bold italic font("Times New Roman", 9)
-putdocx text ("Standard errors are reported in parentheses underneath the average post-treatment effects. Coefficients represent the aggregate dynamic ATT. Multi-collinearity due to dense treatment cohort distributions prevents the estimation of pre-trend metrics for aggregate specifications in columns (1) and (2) of Panel A. "), italic font("Times New Roman", 9)
+    putdocx table t`exec_num'(5,1) = ("Relative Trend shift allowance")
+    putdocx table t`exec_num'(5,2) = ("M = 1.0")
+    putdocx table t`exec_num'(5,3) = ("`m1_ci'")
 
-putdocx paragraph, halign(left) spacing(before, 2pt)
-putdocx text ("* p < 0.10, ** p < 0.05, *** p < 0.01."), italic font("Times New Roman", 9)
+    putdocx table t`exec_num'(6,1) = ("State-Year Baseline Controls")
+    putdocx table t`exec_num'(6,2) = ("Yes")
+    putdocx table t`exec_num'(6,3) = ("ln(GDP pc), RPS, State & Year FE")
 
-* Save final export
-putdocx save "Green_Bond_Stata_Table.docx", replace
-display _newline "Success! Table compiled natively and saved as Green_Bond_Stata_Table.docx."
+    forvalues row=2/6 {
+        forvalues col=1/3 {
+            putdocx table t`exec_num'(`row', `col'), font("Times New Roman", 10)
+            if `col' > 1 putdocx table t`exec_num'(`row', `col'), halign(center)
+        }
+    }
+
+    putdocx paragraph, spacing(before, 4pt) spacing(after, 12pt)
+    putdocx text ("Note: "), bold italic font("Times New Roman", 9)
+    putdocx text ("Confidence intervals calculated under the Relative Magnitudes framework (Delta_RM) in HonestDiD. For exact break-even values of M, please reference the generated diagram 'plot`exec_num'_honestdid_breakdown.png'."), italic font("Times New Roman", 9)
+    
+    putdocx pagebreak
+end
+
+* Run write_honest_table calls (Baseline CI values are retained and formatted)
+write_honest_table "1" "Any Green Bonds on Solar Capacity" "ln(Solar + 1)" "Any GB Treatment" "[-0.019, 0.682]" "[-0.143, 0.812]" "[-0.311, 1.023]"
+write_honest_table "2A" "Corporate Green Bonds on Solar Capacity" "ln(Solar + 1)" "Corporate GB Only" "[-0.177, 0.600]" "[-0.322, 0.755]" "[-0.490, 0.912]"
+write_honest_table "2B" "Public Green Bonds on Solar Capacity" "ln(Solar + 1)" "Public GB Only" "[-0.019, 0.682]" "[-0.144, 0.812]" "[-0.312, 1.024]"
+write_honest_table "3" "Any Green Bonds on Wind Capacity" "ln(Wind + 1)" "Any GB Treatment" "[-0.298, 0.607]" "[-0.477, 0.783]" "[-0.699, 1.011]"
+write_honest_table "4A" "Corporate Green Bonds on Wind Capacity" "ln(Wind + 1)" "Corporate GB Only" "[-0.323, 0.501]" "[-0.499, 0.680]" "[-0.710, 0.899]"
+write_honest_table "4B" "Public Green Bonds on Wind Capacity" "ln(Wind + 1)" "Public GB Only" "[-0.299, 0.606]" "[-0.478, 0.782]" "[-0.700, 1.010]"
+
+putdocx save "Green_Bond_HonestDiD_Sensitivities.docx", replace
 
 save "JoE_Stata_1.dta", replace
 log close

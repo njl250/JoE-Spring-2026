@@ -519,5 +519,98 @@ write_honest_table "4B" "Public Green Bonds on Wind Capacity" "ln(Wind + 1)" "Pu
 
 putdocx save "Green_Bond_HonestDiD_Sensitivities.docx", replace
 
+*=====================================================================
+* GREEN BONDS -> SOLAR / WIND: REGRESSIONS + WORD DOC EXPORT
+* Uses only built-in Stata commands (putdocx requires Stata 15+)
+*=====================================================================
+
+clear all
+set more off
+
+*-------------------------------------------------------------
+* 0. LOAD DATA & SETUP
+*-------------------------------------------------------------
+import delimited "panel.csv", clear varnames(1)
+
+encode state, gen(state_id)
+xtset state_id year
+
+gen ln_solar = ln(solar_capacity + 1)
+gen ln_wind  = ln(wind_capacity + 1)
+label var ln_solar "ln(Solar+1)"
+label var ln_wind  "ln(Wind+1)"
+gen gb_rps = gb * is_rps
+gen corporate_rps = is_corporate * is_rps
+gen public_rps = is_public * is_rps
+
+*=====================================================================
+* PART A: RUN ALL 16 MODELS (unchanged from before)
+*=====================================================================
+estimates clear
+
+regress ln_solar gb, vce(robust)
+estimates store m1
+regress ln_solar gb is_rps real_gdp_per_capita, vce(robust)
+estimates store m2
+regress ln_solar gb is_rps real_gdp_per_capita i.state_id i.year, vce(cluster state_id)
+estimates store m3
+regress ln_solar gb is_rps gb_rps real_gdp_per_capita i.state_id i.year, vce(cluster state_id)
+estimates store m4
+regress ln_solar is_corporate is_public, vce(robust)
+estimates store m5
+regress ln_solar is_corporate is_public is_rps real_gdp_per_capita, vce(robust)
+estimates store m6
+regress ln_solar is_corporate is_public is_rps real_gdp_per_capita i.state_id i.year, vce(cluster state_id)
+estimates store m7
+regress ln_solar is_corporate is_public is_rps corporate_rps public_rps real_gdp_per_capita i.state_id i.year, vce(cluster state_id)
+estimates store m8
+
+regress ln_wind gb, vce(robust)
+estimates store m9
+regress ln_wind gb is_rps real_gdp_per_capita, vce(robust)
+estimates store m10
+regress ln_wind gb is_rps real_gdp_per_capita i.state_id i.year, vce(cluster state_id)
+estimates store m11
+regress ln_wind gb is_rps gb_rps real_gdp_per_capita i.state_id i.year, vce(cluster state_id)
+estimates store m12
+regress ln_wind is_corporate is_public, vce(robust)
+estimates store m13
+regress ln_wind is_corporate is_public is_rps real_gdp_per_capita, vce(robust)
+estimates store m14
+regress ln_wind is_corporate is_public is_rps real_gdp_per_capita i.state_id i.year, vce(cluster state_id)
+estimates store m15
+regress ln_wind is_corporate is_public is_rps corporate_rps public_rps real_gdp_per_capita i.state_id i.year, vce(cluster state_id)
+estimates store m16
+
+ssc install estout, replace
+
+esttab m1 m2 m3 m4 using "Table1_Solar_GB.docx", replace ///
+    b(%9.3f) se(%9.3f) star(* 0.10 ** 0.05 *** 0.01) ///
+    r2 ar2 ///
+    indicate("State Fixed Effects = *state_id" "Year Fixed Effects = *year") ///
+    title("Table 1: Effect of Green Bonds on Solar Capacity") ///
+    mtitle("(1)" "(2)" "(3)" "(4)")
+	
+esttab m5 m6 m7 m8 using "Table2_Solar_Ownership.docx", replace ///
+    b(%9.3f) se(%9.3f) star(* 0.10 ** 0.05 *** 0.01) ///
+    r2 ar2 ///
+    indicate("State Fixed Effects = *state_id" "Year Fixed Effects = *year") ///
+    title("Table 2: Solar Capacity by Ownership Structure") ///
+    mtitle("(5)" "(6)" "(7)" "(8)")
+	
+esttab m9 m10 m11 m12 using "Table3_Wind_GB.docx", replace ///
+    b(%9.3f) se(%9.3f) star(* 0.10 ** 0.05 *** 0.01) ///
+    r2 ar2 ///
+    indicate("State Fixed Effects = *state_id" "Year Fixed Effects = *year") ///
+    title("Table 3: Effect of Green Bonds on Wind Capacity") ///
+    mtitle("(9)" "(10)" "(11)" "(12)")
+	
+esttab m13 m14 m15 m16 using "Table4_Wind_Ownership.docx", replace ///
+    b(%9.3f) se(%9.3f) star(* 0.10 ** 0.05 *** 0.01) ///
+    r2 ar2 ///
+    indicate("State Fixed Effects = *state_id" "Year Fixed Effects = *year") ///
+    title("Table 4: Wind Capacity by Ownership Structure") ///
+    mtitle("(13)" "(14)" "(15)" "(16)")
+
 save "JoE_Stata_1.dta", replace
 log close

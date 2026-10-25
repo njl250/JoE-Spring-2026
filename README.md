@@ -9,5 +9,5 @@ This repository contains data and code developed for the Case Western Reserve Un
 
 ## Repository Content
 * `panel_improved.csv`: Primary balanced state-year panel dataset (2010–2024).
-* `JoE_Stata.do`: Econometric scripts for TWFE models, controls, and interaction terms.
-* `Green Bonds EDA.Rmd`: Data processing and EDA scripts for all variables.
+* `JoE_Final_Analysis.do`: Econometric scripts for TWFE, CSDiD, and HonestDiD models.
+* `Green Bonds EDA_improved.Rmd`: Data processing and EDA scripts for all variables.
